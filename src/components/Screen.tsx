@@ -1,15 +1,28 @@
+import type { ComponentType } from 'react';
 import { useStore } from '../state/store';
+import type { ScreenId } from '../data/types';
+import { Home } from '../screens/Home';
+import { Notifications } from '../screens/Notifications';
 import { Onboarding } from '../screens/Onboarding';
 import { Placeholder } from '../screens/Placeholder';
+import { Search } from '../screens/Search';
 import { StatusBar } from './StatusBar';
 import { TabBar } from './TabBar';
 import { Toast } from './Toast';
 
 /** Screens that keep the tab bar visible. */
-const WITH_NAV = ['home', 'search', 'notifs', 'profile', 'list'];
+const WITH_NAV: ScreenId[] = ['home', 'search', 'notifs', 'profile', 'list'];
+
+const SCREENS: Partial<Record<ScreenId, ComponentType>> = {
+  onboarding: Onboarding,
+  home: Home,
+  search: Search,
+  notifs: Notifications,
+};
 
 export function Screen() {
   const { state, toast } = useStore();
+  const Current = SCREENS[state.screen];
 
   return (
     <>
@@ -22,11 +35,7 @@ export function Screen() {
           overflowX: 'hidden',
         }}
       >
-        {state.screen === 'onboarding' ? (
-          <Onboarding />
-        ) : (
-          <Placeholder name={state.screen} />
-        )}
+        {Current ? <Current /> : <Placeholder name={state.screen} />}
       </div>
       {toast && <Toast message={toast} />}
       {WITH_NAV.includes(state.screen) && <TabBar />}

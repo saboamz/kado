@@ -1,26 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Onboarding } from './Onboarding';
 import { ONBOARDING } from '../data/onboarding';
-import { StoreProvider, useStore, type State } from '../state/store';
-import { ThemeProvider } from '../theme';
+import { renderScreen } from '../test/render';
 
-/** Surfaces the current screen so navigation is observable from a test. */
-function ScreenProbe() {
-  const { state } = useStore();
-  return <span data-testid="screen">{state.screen}</span>;
-}
-
-function setup(initial?: Partial<State>) {
-  return render(
-    <StoreProvider initial={{ screen: 'onboarding', ...initial }}>
-      <ThemeProvider dark={false}>
-        <Onboarding />
-        <ScreenProbe />
-      </ThemeProvider>
-    </StoreProvider>,
-  );
-}
+const setup = (onb = 0) =>
+  renderScreen(<Onboarding />, { initial: { screen: 'onboarding', onb } });
 
 it('opens on the first slide', () => {
   setup();
@@ -39,14 +24,14 @@ it('advances through the slides', async () => {
 });
 
 it('closes the last slide with its own call to action', () => {
-  setup({ onb: 2 });
+  setup(2);
   expect(
     screen.getByRole('button', { name: 'Créer mon profil' }),
   ).toBeInTheDocument();
 });
 
 it('promises the surprise on the final slide', () => {
-  setup({ onb: 2 });
+  setup(2);
   expect(screen.getByText(/Vous ne verrez jamais qui/)).toBeInTheDocument();
 });
 
@@ -59,7 +44,7 @@ it('skips straight to home', async () => {
 
 it('lands on home after the final call to action', async () => {
   const user = userEvent.setup();
-  setup({ onb: 2 });
+  setup(2);
   await user.click(screen.getByRole('button', { name: 'Créer mon profil' }));
   expect(screen.getByTestId('screen')).toHaveTextContent('home');
 });
