@@ -1,4 +1,5 @@
 import { useStore } from '../state/store';
+import { Onboarding } from '../screens/Onboarding';
 import { Placeholder } from '../screens/Placeholder';
 import { StatusBar } from './StatusBar';
 import { TabBar } from './TabBar';
@@ -21,7 +22,11 @@ export function Screen() {
           overflowX: 'hidden',
         }}
       >
-        <Placeholder name={state.screen} />
+        {state.screen === 'onboarding' ? (
+          <Onboarding />
+        ) : (
+          <Placeholder name={state.screen} />
+        )}
       </div>
       {toast && <Toast message={toast} />}
       {WITH_NAV.includes(state.screen) && <TabBar />}
