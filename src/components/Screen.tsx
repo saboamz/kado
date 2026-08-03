@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { useStore } from '../state/store';
 import type { ScreenId } from '../data/types';
+import { GiftDetail } from '../screens/GiftDetail';
 import { Home } from '../screens/Home';
 import { Notifications } from '../screens/Notifications';
 import { Onboarding } from '../screens/Onboarding';
@@ -22,6 +23,8 @@ const SCREENS: Partial<Record<ScreenId, ComponentType>> = {
   notifs: Notifications,
   profile: Profile,
   list: Wishlist,
+  detail: GiftDetail,
+  pot: GiftDetail,
 };
 
 export function Screen() {
