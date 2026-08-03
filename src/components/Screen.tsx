@@ -2,13 +2,15 @@ import type { ComponentType } from 'react';
 import { useStore } from '../state/store';
 import type { ScreenId } from '../data/types';
 import { AddWish } from '../screens/AddWish';
+import { EmptyState } from '../screens/EmptyState';
+import { ErrorState } from '../screens/ErrorState';
 import { GiftDetail } from '../screens/GiftDetail';
 import { Home } from '../screens/Home';
 import { Notifications } from '../screens/Notifications';
 import { Onboarding } from '../screens/Onboarding';
-import { Placeholder } from '../screens/Placeholder';
 import { Profile } from '../screens/Profile';
 import { Search } from '../screens/Search';
+import { Settings } from '../screens/Settings';
 import { Wishlist } from '../screens/Wishlist';
 import { StatusBar } from './StatusBar';
 import { TabBar } from './TabBar';
@@ -17,7 +19,11 @@ import { Toast } from './Toast';
 /** Screens that keep the tab bar visible. */
 const WITH_NAV: ScreenId[] = ['home', 'search', 'notifs', 'profile', 'list'];
 
-const SCREENS: Partial<Record<ScreenId, ComponentType>> = {
+/**
+ * Every screen id maps to a component. Not Partial: adding a ScreenId without
+ * a screen is a type error rather than a blank device at runtime.
+ */
+const SCREENS: Record<ScreenId, ComponentType> = {
   onboarding: Onboarding,
   home: Home,
   search: Search,
@@ -27,6 +33,9 @@ const SCREENS: Partial<Record<ScreenId, ComponentType>> = {
   detail: GiftDetail,
   pot: GiftDetail,
   add: AddWish,
+  settings: Settings,
+  empty: EmptyState,
+  error: ErrorState,
 };
 
 export function Screen() {
@@ -44,7 +53,7 @@ export function Screen() {
           overflowX: 'hidden',
         }}
       >
-        {Current ? <Current /> : <Placeholder name={state.screen} />}
+        <Current />
       </div>
       {toast && <Toast message={toast} />}
       {WITH_NAV.includes(state.screen) && <TabBar />}
