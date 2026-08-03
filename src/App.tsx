@@ -1,3 +1,4 @@
+import { Chrome } from './components/Chrome';
 import { PhoneFrame } from './components/PhoneFrame';
 import { Screen } from './components/Screen';
 import { StoreProvider, useStore } from './state/store';
@@ -17,17 +18,9 @@ function Device() {
 export function App() {
   return (
     <StoreProvider>
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 40,
-        }}
-      >
+      <Chrome>
         <Device />
-      </div>
+      </Chrome>
     </StoreProvider>
   );
 }
