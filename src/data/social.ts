@@ -84,3 +84,28 @@ export const NOTIFICATIONS = [
     time: '4 j',
   },
 ];
+
+export const INTERESTS = ['Céramique', 'Café', 'Randonnée', 'Design'];
+
+export const COLLECTIONS: {
+  id: string;
+  name: string;
+  count: string;
+  to: 'list' | 'empty';
+}[] = [
+  { id: 'c1', name: 'Anniversaire', count: '8 envies', to: 'list' },
+  { id: 'c2', name: 'Maison', count: '12 envies', to: 'list' },
+  { id: 'c3', name: 'Voyage', count: '5 envies', to: 'list' },
+  { id: 'c4', name: 'Noël', count: '0 envie', to: 'empty' },
+  { id: 'c5', name: 'Sport', count: '6 envies', to: 'list' },
+  { id: 'c6', name: 'Geek', count: '10 envies', to: 'list' },
+];
+
+export const PROFILE_STATS = [
+  { value: '6', label: 'Listes' },
+  { value: '41', label: 'Envies' },
+  { value: '12', label: 'Reçus' },
+];
+
+export const PROFILE_BIO =
+  'Café filtre, céramique et randonnées. Anniversaire le 14 mars.';

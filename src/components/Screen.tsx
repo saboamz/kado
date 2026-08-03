@@ -5,7 +5,9 @@ import { Home } from '../screens/Home';
 import { Notifications } from '../screens/Notifications';
 import { Onboarding } from '../screens/Onboarding';
 import { Placeholder } from '../screens/Placeholder';
+import { Profile } from '../screens/Profile';
 import { Search } from '../screens/Search';
+import { Wishlist } from '../screens/Wishlist';
 import { StatusBar } from './StatusBar';
 import { TabBar } from './TabBar';
 import { Toast } from './Toast';
@@ -18,6 +20,8 @@ const SCREENS: Partial<Record<ScreenId, ComponentType>> = {
   home: Home,
   search: Search,
   notifs: Notifications,
+  profile: Profile,
+  list: Wishlist,
 };
 
 export function Screen() {
