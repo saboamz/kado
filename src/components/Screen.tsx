@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { useStore } from '../state/store';
 import type { ScreenId } from '../data/types';
+import { AddWish } from '../screens/AddWish';
 import { GiftDetail } from '../screens/GiftDetail';
 import { Home } from '../screens/Home';
 import { Notifications } from '../screens/Notifications';
@@ -25,6 +26,7 @@ const SCREENS: Partial<Record<ScreenId, ComponentType>> = {
   list: Wishlist,
   detail: GiftDetail,
   pot: GiftDetail,
+  add: AddWish,
 };
 
 export function Screen() {
