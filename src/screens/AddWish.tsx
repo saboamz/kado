@@ -116,7 +116,7 @@ export function AddWish() {
             alignItems: 'center',
           }}
         >
-          <Skeleton style={{ width: 74, height: 74, borderRadius: 15 }} />
+          <Skeleton className="h-[74px] w-[74px] rounded-xl" />
           <div
             style={{
               flex: 1,
@@ -128,7 +128,10 @@ export function AddWish() {
             {['78%', '46%', '60%'].map((w) => (
               <Skeleton
                 key={w}
-                style={{ height: 12, width: w, borderRadius: 6 }}
+                className="h-3 rounded-sm"
+                // Width varies per row; Tailwind cannot build a class from a
+                // runtime value, so it stays a style prop.
+                style={{ width: w }}
               />
             ))}
           </div>

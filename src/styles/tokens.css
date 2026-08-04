@@ -1,0 +1,104 @@
+/**
+ * Design tokens.
+ *
+ * The colour values are the prototype's LIGHT/DARK palettes (src/theme/tokens.ts)
+ * expressed as CSS custom properties so that `:hover`, `:focus-visible`,
+ * `:disabled` and `@media` can reach them — inline styles cannot.
+ *
+ * The scales below are new. The prototype had 24 distinct border radii, 17 gaps
+ * and 40 type styles, all written inline at the call site. Every value here is
+ * the nearest survivor of that set, so screens snap onto the scale with shifts
+ * of a pixel or two rather than a redesign.
+ *
+ * `src/theme/tokens.ts` stays the source of truth for TypeScript consumers and
+ * is asserted against these values in src/theme/theme.test.tsx. Change one,
+ * change the other.
+ */
+
+@theme {
+  /* Typography ------------------------------------------------------------ */
+  --font-sans: Figtree, system-ui, sans-serif;
+  --font-mono: 'Roboto Mono', monospace;
+
+  /* Sans for content, mono for metadata: timestamps, prices, counts, codes. */
+  --text-xs: 0.6875rem; /* 11   */
+  --text-sm: 0.78125rem; /* 12.5 */
+  --text-base: 0.90625rem; /* 14.5 */
+  --text-lg: 1rem; /* 16   */
+  --text-xl: 1.1875rem; /* 19   */
+  --text-2xl: 1.3125rem; /* 21   */
+  --text-3xl: 1.5625rem; /* 25   */
+  --text-4xl: 1.75rem; /* 28   */
+
+  --tracking-tighter: -0.03em;
+  --tracking-tight: -0.02em;
+  --tracking-eyebrow: 0.1em;
+
+  /* Spacing --------------------------------------------------------------- */
+  /* Tailwind derives spacing from this base; the ad-hoc 9/13/14/18/22 values
+     of the prototype snap to the nearest multiple of 4. */
+  --spacing: 0.25rem;
+
+  /* Radii ----------------------------------------------------------------- */
+  --radius-sm: 0.5rem; /* 8  */
+  --radius-md: 0.625rem; /* 10 */
+  --radius-lg: 0.75rem; /* 12 */
+  --radius-xl: 1rem; /* 16 */
+  --radius-2xl: 1.25rem; /* 20 */
+  --radius-3xl: 1.5rem; /* 24 */
+
+  /* Motion ---------------------------------------------------------------- */
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Colour ---------------------------------------------------------------- */
+  /* Semantic slots, not colour names. Light values here; the dark overrides
+     live in the `.dark` block below. */
+  --color-bg: #ffffff;
+  --color-surface: #f4f4f6;
+  --color-chip: #eaeaee;
+  --color-fg: #0b0b0c;
+  --color-fg2: #6b6b73;
+  --color-fg3: #a1a1aa;
+  --color-line: rgba(0, 0, 0, 0.07);
+  --color-line2: rgba(0, 0, 0, 0.14);
+  --color-stripe: rgba(0, 0, 0, 0.055);
+  --color-glass: rgba(255, 255, 255, 0.82);
+
+  --color-accent: #ff6a55;
+  --color-accent-soft: rgba(255, 106, 85, 0.1);
+  --color-accent-glow: rgba(255, 106, 85, 0.65);
+  /* Text drawn on top of --color-accent. The prototype hardcoded '#fff' in
+     eight places; this token is what makes a lighter accent survivable. */
+  --color-on-accent: #ffffff;
+
+  /* The page canvas behind the app, outside the themed surface. */
+  --color-canvas: #eceae7;
+}
+
+/**
+ * Dark theme.
+ *
+ * Driven by a `.dark` class on <html> rather than `prefers-color-scheme` alone,
+ * because the app exposes an explicit toggle that must win over the OS. The
+ * media query seeds the initial value for users who have never toggled.
+ */
+@layer theme {
+  .dark {
+    --color-bg: #0b0b0d;
+    --color-surface: #17171a;
+    --color-chip: #232328;
+    --color-fg: #f4f4f7;
+    --color-fg2: #9a9aa4;
+    --color-fg3: #66666f;
+    --color-line: rgba(255, 255, 255, 0.09);
+    --color-line2: rgba(255, 255, 255, 0.16);
+    --color-stripe: rgba(255, 255, 255, 0.06);
+    --color-glass: rgba(16, 16, 19, 0.8);
+
+    --color-accent-soft: rgba(255, 122, 102, 0.16);
+    --color-canvas: #08080a;
+  }
+}
+
+/* `dark:` variants key off the class, not the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));

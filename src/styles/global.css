@@ -1,27 +1,53 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+@import 'tailwindcss';
+@import './tokens.css';
+
+/*
+ * Tailwind's preflight already handles the box-sizing and margin reset that
+ * this file used to do by hand. What remains below is the part preflight does
+ * not cover: the button/input normalisation the prototype relies on, and the
+ * brand's own utilities and keyframes.
+ */
 
 body {
-  margin: 0;
-  background: #eceae7;
-  font-family: Figtree, system-ui, sans-serif;
+  background: var(--color-canvas);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 button {
   font-family: inherit;
   cursor: pointer;
-  border: 0;
-  background: none;
   color: inherit;
-  padding: 0;
 }
 
 input {
   font-family: inherit;
+}
+
+@utility hatch {
+  /*
+   * The prototype ships no images: every photo slot is a diagonal hatch with
+   * its label in monospace, so the layout reads as "image goes here" without
+   * pretending to be final. Ported from stripes() in src/theme/styles.ts.
+   */
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-stripe) 0 4px,
+    rgba(0, 0, 0, 0) 4px 8px
+  );
+}
+
+@utility focus-ring {
+  /*
+   * The single most important thing this migration buys: a visible keyboard
+   * focus indicator. Inline styles cannot express :focus-visible, so the
+   * prototype had none at all — global.css zeroed the button border and
+   * nothing replaced the UA outline.
+   */
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
 
 /* Animations ported from the prototype. */
