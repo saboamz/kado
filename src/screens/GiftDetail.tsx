@@ -144,7 +144,9 @@ export function GiftDetail() {
         className={cn(
           'fixed inset-x-0 bottom-0 z-30 border-t border-line bg-glass backdrop-blur-[20px]',
           'px-5 pt-3.5 pb-[max(1.875rem,env(safe-area-inset-bottom))] sm:px-6',
-          'md:pl-20',
+          // Matches AppLayout's symmetric rail padding so the CTA stays
+          // centred under the content rather than shifted by the nav width.
+          'md:px-20',
         )}
       >
         <div className="mx-auto w-full max-w-screen-sm">

@@ -21,7 +21,10 @@ export function AppLayout() {
   const showNav = !isDetail && !NAVLESS.some((p) => pathname.startsWith(p));
 
   return (
-    <div className={showNav ? 'md:pl-20' : ''}>
+    // The rail is 5rem wide and fixed, so the content column is offset by it.
+    // Padding it symmetrically keeps the column centred in the *remaining*
+    // space rather than pushed right by the width of the nav.
+    <div className={showNav ? 'md:px-20' : ''}>
       {/* Skip link: the first thing a keyboard user meets, and the app had
           nothing of the kind. */}
       <a
