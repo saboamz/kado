@@ -1,6 +1,8 @@
 import { euros, POT_TOTAL } from '../data/fixtures';
-import { useStore } from '../state/store';
-import { chip, FONT, stripes, useTheme } from '../theme';
+import type { Role } from '../data/types';
+import { usePotState, useStore } from '../state/store';
+import { Chip, Progress } from '../ui';
+import { PlaceholderArt } from './Placeholder';
 
 const AMOUNTS = [20, 50, 100, 200];
 
@@ -8,112 +10,71 @@ const AMOUNTS = [20, 50, 100, 200];
  * Collaborative gift pot.
  *
  * Contributions are anonymous by the same rule as reservations: the pot shows
- * a total and an avatar count, never who gave what. This component is only
- * ever rendered for friends.
+ * a total and an avatar count, never who gave what.
+ *
+ * This renders nothing at all for an owner — not an empty section, nothing —
+ * because usePotState hands them null rather than numbers to hide. The caller
+ * no longer needs a `!owner &&` guard for correctness.
  */
-export function Pot() {
-  const { state, dispatch } = useStore();
-  const theme = useTheme();
-  const { t } = theme;
-  const pct = Math.min(100, Math.round((state.pot / POT_TOTAL) * 100));
-  const remaining = POT_TOTAL - state.pot;
+export function Pot({ role }: { role: Role }) {
+  const { dispatch } = useStore();
+  const pot = usePotState(role);
+
+  if (!pot) return null;
+
+  const pct = Math.min(100, Math.round((pot.total / POT_TOTAL) * 100));
+  const remaining = POT_TOTAL - pot.total;
 
   return (
     <section
       aria-label="Cagnotte"
-      style={{
-        marginTop: 18,
-        padding: 18,
-        borderRadius: 20,
-        border: `1px solid ${t.line}`,
-        background: t.bg,
-      }}
+      className="mt-4.5 rounded-2xl border border-line bg-bg p-4.5"
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          marginBottom: 12,
-        }}
-      >
-        <span
-          style={{
-            font: `700 21px/1 ${FONT.sans}`,
-            color: t.fg,
-            letterSpacing: '-.02em',
-          }}
-        >
-          {euros(state.pot)} récoltés
+      <div className="mb-3 flex items-baseline justify-between">
+        <span className="text-2xl leading-none font-bold tracking-tight text-fg">
+          {euros(pot.total)} récoltés
         </span>
-        <span style={{ font: `400 12px/1 ${FONT.mono}`, color: t.fg2 }}>
+        <span className="font-mono text-sm leading-none text-fg2">
           sur {euros(POT_TOTAL)}
         </span>
       </div>
 
-      <div
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={POT_TOTAL}
-        aria-valuenow={state.pot}
-        aria-label={`Cagnotte à ${pct} %`}
-        style={{
-          height: 8,
-          borderRadius: 5,
-          background: t.chip,
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            height: '100%',
-            width: `${pct}%`,
-            borderRadius: 5,
-            background: theme.accent,
-            transition: 'width .7s cubic-bezier(.2,.8,.2,1)',
-          }}
-        />
-      </div>
+      <Progress
+        value={pot.total}
+        max={POT_TOTAL}
+        label={`Cagnotte à ${pct} %`}
+        className="h-2"
+      />
 
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 14 }}
-      >
-        <div style={{ display: 'flex' }} aria-hidden>
+      <div className="mt-3.5 flex items-center gap-2.5">
+        <div className="flex" aria-hidden>
           {[0, 1, 2].map((i) => (
-            <span
+            <PlaceholderArt
               key={i}
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                background: stripes(theme, t.chip, 3),
-                border: `2px solid ${t.bg}`,
-                marginLeft: i ? -8 : 0,
-              }}
+              round
+              hatch={3}
+              className={`h-6 w-6 border-2 border-bg ${i ? '-ml-2' : ''}`}
             />
           ))}
         </div>
-        <span style={{ font: `400 12px/1.3 ${FONT.sans}`, color: t.fg2 }}>
-          {/* Count only. Naming contributors would defeat the anonymity. */}
-          {Object.keys(state.reserved).length + 2} amis participent · il reste{' '}
-          {euros(remaining)}
+        <span className="text-sm leading-tight text-fg2">
+          {pot.contributors} amis participent · il reste {euros(remaining)}
         </span>
       </div>
 
       <div
         role="group"
         aria-label="Montant de la participation"
-        style={{ display: 'flex', gap: 7, marginTop: 16 }}
+        className="mt-4 flex flex-wrap gap-2"
       >
         {AMOUNTS.map((v) => (
-          <button
+          <Chip
             key={v}
+            selected={pot.contrib === v}
             onClick={() => dispatch({ type: 'setContrib', amount: v })}
-            aria-pressed={state.contrib === v}
-            style={chip(theme, state.contrib === v)}
           >
             {euros(v)}
-          </button>
+          </Chip>
         ))}
       </div>
     </section>

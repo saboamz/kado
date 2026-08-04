@@ -1,182 +1,132 @@
+import { Link } from 'react-router-dom';
 import { PlaceholderArt } from '../components/Placeholder';
-import { ScreenTitle } from '../components/ScreenTitle';
 import { BIRTHDAYS, FEED } from '../data/social';
-import { useStore } from '../state/store';
-import { eyebrow, FONT, useTheme } from '../theme';
+import { Card, Eyebrow, ScreenShell, Tag, cn } from '../ui';
+
+/**
+ * Where a feed entry points.
+ *
+ * The fixtures still carry `to: ScreenId` from the gallery era, when 'list' and
+ * 'pot' named mock screens rather than resources. Until P6 hands us real ids,
+ * every list link resolves to the same placeholder wishlist and every gift link
+ * to the same placeholder gift — the shape of the URL is what matters here, not
+ * the target.
+ */
+const PLACEHOLDER_LIST = '/u/sophie/listes/anniversaire';
+const PLACEHOLDER_GIFT = `${PLACEHOLDER_LIST}/g1`;
+
+function feedHref(to: string): string {
+  switch (to) {
+    case 'profile':
+      return '/u/sophie';
+    case 'pot':
+      return `${PLACEHOLDER_GIFT}/cagnotte`;
+    default:
+      return PLACEHOLDER_LIST;
+  }
+}
 
 export function Home() {
-  const { dispatch } = useStore();
-  const theme = useTheme();
-  const { t } = theme;
-
   return (
-    <div style={{ padding: '66px 20px 120px', animation: 'kFadeUp .4s both' }}>
-      <ScreenTitle
-        margin="0 0 22px"
-        trailing={
-          <PlaceholderArt style={{ width: 38, height: 38, borderRadius: '50%' }} />
-        }
-      >
-        Aujourd&rsquo;hui
-      </ScreenTitle>
+    <ScreenShell>
+      <div className="mb-5 flex items-center justify-between">
+        <h2 className="text-4xl leading-tight font-bold tracking-tighter text-fg">
+          Aujourd&rsquo;hui
+        </h2>
+        <PlaceholderArt round className="h-9.5 w-9.5 flex-none" />
+      </div>
 
       <section
         aria-label="Anniversaires à venir"
-        style={{
-          display: 'flex',
-          gap: 10,
-          overflowX: 'auto',
-          padding: '0 20px 4px',
-          margin: '0 -20px 24px',
-        }}
+        // Bleeds to the screen edges so the strip reads as scrollable: the
+        // negative margin has to cancel ScreenShell's padding exactly, or the
+        // first card sits inset and the affordance is lost.
+        className="-mx-5 mb-6 flex gap-2.5 overflow-x-auto px-5 pb-1 sm:-mx-6 sm:px-6"
       >
         {BIRTHDAYS.map((b) => (
-          <button
+          <Link
             key={b.name}
-            onClick={() => dispatch({ type: 'go', screen: 'profile' })}
-            style={{
-              flex: 'none',
-              width: 112,
-              padding: 12,
-              borderRadius: 20,
-              background: t.surface,
-              textAlign: 'left',
-              transition: 'transform .2s',
-            }}
+            to="/u/sophie"
+            className={cn(
+              'w-28 flex-none rounded-2xl bg-surface p-3 text-left',
+              'transition-colors hover:bg-chip',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+            )}
           >
-            <PlaceholderArt
-              style={{
-                width: '100%',
-                aspectRatio: '1',
-                borderRadius: 14,
-                marginBottom: 9,
-              }}
-            />
-            <div style={{ font: `600 13px/1.2 ${FONT.sans}`, color: t.fg }}>
+            <PlaceholderArt className="mb-2.5 aspect-square w-full rounded-lg" />
+            <div className="text-sm leading-tight font-semibold text-fg">
               {b.name}
             </div>
             <div
-              style={{
-                font: `400 11px/1.3 ${FONT.mono}`,
-                color: b.hot ? theme.accent : t.fg3,
-                marginTop: 3,
-              }}
+              className={cn(
+                'mt-1 font-mono text-xs leading-tight',
+                b.hot ? 'text-accent' : 'text-fg3',
+              )}
             >
               {b.when}
             </div>
-          </button>
+          </Link>
         ))}
       </section>
 
-      <div style={{ ...eyebrow(theme), margin: '0 0 12px 2px' }}>Activité</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <Eyebrow className="mb-3 ml-0.5">Activité</Eyebrow>
+      <ul className="flex list-none flex-col gap-2.5 p-0">
         {FEED.map((f) => {
           const isPot = f.tag === 'Cagnotte';
           return (
-            <button
-              key={f.text}
-              onClick={() => dispatch({ type: 'go', screen: f.to })}
-              style={{
-                textAlign: 'left',
-                padding: 14,
-                borderRadius: 20,
-                background: t.surface,
-                transition: 'transform .2s',
-              }}
-            >
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <PlaceholderArt
-                  style={{
-                    width: 42,
-                    height: 42,
-                    flex: 'none',
-                    borderRadius: 13,
-                  }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      font: `400 14px/1.42 ${FONT.sans}`,
-                      color: t.fg,
-                      textWrap: 'pretty',
-                    }}
-                  >
+            <Card key={f.text} as="li" pad="none" radius="xl">
+              {/* The whole row is one link, so the hover/focus affordance lives
+                  on the link rather than on the card wrapping it. */}
+              <Link
+                to={feedHref(f.to)}
+                className={cn(
+                  'flex items-start gap-3 rounded-xl p-3.5 text-left',
+                  'transition-colors hover:bg-chip',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+                )}
+              >
+                <PlaceholderArt className="h-10.5 w-10.5 flex-none rounded-lg" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-base leading-snug text-pretty text-fg">
                     {f.text}
                   </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 7,
-                      marginTop: 6,
-                    }}
-                  >
-                    <span
-                      style={{ font: `400 10.5px/1 ${FONT.mono}`, color: t.fg3 }}
-                    >
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="font-mono text-xs leading-none text-fg3">
                       {f.time}
                     </span>
-                    <span
-                      style={{
-                        font: `500 10px/1 ${FONT.sans}`,
-                        color: isPot ? theme.accent : t.fg2,
-                        padding: '5px 8px',
-                        borderRadius: 7,
-                        background: isPot ? theme.accentSoft : t.chip,
-                      }}
+                    {/* Neutral tone is bg-surface, which would vanish against
+                        the surface card it sits on — chip is the next step up. */}
+                    <Tag
+                      size="sm"
+                      tone={isPot ? 'soft' : 'neutral'}
+                      className={isPot ? undefined : 'bg-chip text-fg2'}
                     >
                       {f.tag}
-                    </span>
+                    </Tag>
                   </div>
                 </div>
-              </div>
-            </button>
+              </Link>
+            </Card>
           );
         })}
-      </div>
+      </ul>
 
-      <div
-        style={{
-          marginTop: 14,
-          padding: '16px 18px',
-          borderRadius: 20,
-          border: `1px dashed ${t.line2}`,
-          display: 'flex',
-          gap: 12,
-          alignItems: 'center',
-        }}
-      >
+      <div className="mt-3.5 flex items-center gap-3 rounded-2xl border border-dashed border-line2 px-4.5 py-4">
         <div
           aria-hidden
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 10,
-            background: theme.accentSoft,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: theme.accent,
-            font: `700 15px/1 ${FONT.sans}`,
-          }}
+          className="flex h-7.5 w-7.5 flex-none items-center justify-center rounded-md bg-accent-soft text-base leading-none font-bold text-accent"
         >
           !
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ font: `600 13px/1.3 ${FONT.sans}`, color: t.fg }}>
+        <div className="flex-1">
+          <div className="text-sm leading-snug font-semibold text-fg">
             Votre liste Noël est vide
           </div>
-          <div
-            style={{
-              font: `400 12px/1.4 ${FONT.sans}`,
-              color: t.fg2,
-              marginTop: 2,
-            }}
-          >
+          <div className="mt-0.5 text-sm leading-snug text-fg2">
             Ajoutez 3 idées pour vos proches.
           </div>
         </div>
       </div>
-    </div>
+    </ScreenShell>
   );
 }

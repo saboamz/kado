@@ -3,12 +3,31 @@ import userEvent from '@testing-library/user-event';
 import { GiftDetail } from './GiftDetail';
 import { renderScreen } from '../test/render';
 
-const onGift = (id: string) => ({ screen: 'detail' as const, current: id });
-const onPot = { screen: 'pot' as const, current: 'g3' };
+/**
+ * Ownership comes from the URL now, not a `role` field: `sophie` is the
+ * signed-in handle, so a list under `/u/sophie/...` is the owner's own and any
+ * other handle is viewed as a friend.
+ */
+const DETAIL_PATH = '/u/:handle/listes/:slug/:itemId';
+const POT_PATH = '/u/:handle/listes/:slug/:itemId/cagnotte';
+
+const asFriend = (id: string) => ({
+  route: `/u/marc/listes/anniversaire/${id}`,
+  path: DETAIL_PATH,
+});
+const asOwner = (id: string) => ({
+  route: `/u/sophie/listes/anniversaire/${id}`,
+  path: DETAIL_PATH,
+});
+const onPot = { route: '/u/marc/listes/anniversaire/g3/cagnotte', path: POT_PATH };
+const onPotAsOwner = {
+  route: '/u/sophie/listes/anniversaire/g3/cagnotte',
+  path: POT_PATH,
+};
 
 describe('the gift', () => {
   it('shows name, price, category and description', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
+    renderScreen(<GiftDetail />, asFriend('g1'));
     expect(screen.getByRole('heading')).toHaveTextContent('AirPods Pro 3');
     expect(screen.getByText('279 €')).toBeInTheDocument();
     expect(screen.getByText('Tech')).toBeInTheDocument();
@@ -16,29 +35,31 @@ describe('the gift', () => {
   });
 
   it('credits the merchant', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
+    renderScreen(<GiftDetail />, asFriend('g1'));
     expect(screen.getByText('Apple Store')).toBeInTheDocument();
     expect(screen.getByText('apple.com/fr/airpods-pro')).toBeInTheDocument();
   });
 
   it('labels the priority for assistive tech', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g5') });
+    renderScreen(<GiftDetail />, asFriend('g5'));
     expect(screen.getByLabelText('Priorité 1 sur 3')).toBeInTheDocument();
     expect(screen.getByText('Ce serait sympa')).toBeInTheDocument();
   });
 
   it('goes back to the list', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
-    await user.click(screen.getByRole('button', { name: 'Retour à la liste' }));
-    expect(screen.getByTestId('screen')).toHaveTextContent('list');
+    renderScreen(<GiftDetail />, asFriend('g1'));
+    await user.click(screen.getByRole('link', { name: 'Retour à la liste' }));
+    expect(screen.getByTestId('path')).toHaveTextContent(
+      '/u/marc/listes/anniversaire',
+    );
   });
 });
 
 describe('reserving as a friend', () => {
   it('reserves an available gift and reassures the reserver', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
+    renderScreen(<GiftDetail />, asFriend('g1'));
     await user.click(screen.getByRole('button', { name: 'Réserver ce cadeau' }));
     expect(screen.getByTestId('toast')).toHaveTextContent(
       'Réservé — Sophie ne verra rien',
@@ -51,7 +72,8 @@ describe('reserving as a friend', () => {
   it('releases a gift it already holds', async () => {
     const user = userEvent.setup();
     renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g1'), reserved: { g1: 'you' } },
+      ...asFriend('g1'),
+      initial: { reserved: { g1: 'you' } },
     });
     await user.click(
       screen.getByRole('button', { name: 'Annuler ma réservation' }),
@@ -66,7 +88,8 @@ describe('reserving as a friend', () => {
 
   it("disables a gift another friend already took", () => {
     renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g2'), reserved: { g2: 'other' } },
+      ...asFriend('g2'),
+      initial: { reserved: { g2: 'other' } },
     });
     expect(
       screen.getByRole('button', { name: 'Déjà réservé par un proche' }),
@@ -77,7 +100,8 @@ describe('reserving as a friend', () => {
 describe('the secrecy rule on the detail screen', () => {
   it('offers the owner editing, never reserving', () => {
     renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g1'), role: 'owner', reserved: { g1: 'other' } },
+      ...asOwner('g1'),
+      initial: { reserved: { g1: 'other' } },
     });
     expect(
       screen.getByRole('button', { name: 'Modifier ce cadeau' }),
@@ -89,7 +113,8 @@ describe('the secrecy rule on the detail screen', () => {
 
   it('tells the owner no reservation data exists here', () => {
     renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g1'), role: 'owner', reserved: { g1: 'other' } },
+      ...asOwner('g1'),
+      initial: { reserved: { g1: 'other' } },
     });
     expect(
       screen.getByText(/aucune information de réservation n'existe/),
@@ -100,7 +125,7 @@ describe('the secrecy rule on the detail screen', () => {
   });
 
   it('hides the whole pot from the owner', () => {
-    renderScreen(<GiftDetail />, { initial: { ...onPot, role: 'owner' } });
+    renderScreen(<GiftDetail />, onPotAsOwner);
     expect(
       screen.queryByRole('region', { name: 'Cagnotte' }),
     ).not.toBeInTheDocument();
@@ -108,7 +133,7 @@ describe('the secrecy rule on the detail screen', () => {
   });
 
   it('promises anonymity to a friend before they reserve', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
+    renderScreen(<GiftDetail />, asFriend('g1'));
     expect(
       screen.getByText('Votre réservation restera invisible pour Sophie.'),
     ).toBeInTheDocument();
@@ -117,7 +142,7 @@ describe('the secrecy rule on the detail screen', () => {
 
 describe('the cagnotte', () => {
   it('shows progress toward the target', () => {
-    renderScreen(<GiftDetail />, { initial: onPot });
+    renderScreen(<GiftDetail />, onPot);
     const bar = screen.getByRole('progressbar', { name: /Cagnotte à/ });
     expect(bar).toHaveAttribute('aria-valuenow', '650');
     expect(bar).toHaveAttribute('aria-valuemax', '1599');
@@ -126,7 +151,7 @@ describe('the cagnotte', () => {
 
   it('contributes the chosen amount, anonymously', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: onPot });
+    renderScreen(<GiftDetail />, onPot);
     await user.click(screen.getByRole('button', { name: '100 €' }));
     await user.click(
       screen.getByRole('button', { name: 'Participer avec 100 €' }),
@@ -139,7 +164,10 @@ describe('the cagnotte', () => {
 
   it('never overshoots the target', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: { ...onPot, pot: 1550, contrib: 200 } });
+    renderScreen(<GiftDetail />, {
+      ...onPot,
+      initial: { pot: 1550, contrib: 200 },
+    });
     await user.click(
       screen.getByRole('button', { name: 'Participer avec 200 €' }),
     );
@@ -147,8 +175,12 @@ describe('the cagnotte', () => {
   });
 
   it('falls back to a collaborative gift when the pot screen has none', () => {
-    // Arriving from the feed's cagnotte entry: screen is 'pot', current is 'g1'.
-    renderScreen(<GiftDetail />, { initial: { screen: 'pot', current: 'g1' } });
+    // Arriving from the feed's cagnotte entry: the URL ends in /cagnotte but
+    // points at g1, which has no pot of its own.
+    renderScreen(<GiftDetail />, {
+      route: '/u/marc/listes/anniversaire/g1/cagnotte',
+      path: POT_PATH,
+    });
     expect(screen.getByRole('region', { name: 'Cagnotte' })).toBeInTheDocument();
   });
 });

@@ -1,29 +1,26 @@
+import { useNavigate } from 'react-router-dom';
 import { CenteredState } from '../components/CenteredState';
 import { useStore } from '../state/store';
-import { FONT, useTheme } from '../theme';
+import { Button } from '../ui';
 
+/**
+ * The standalone error screen.
+ *
+ * Route-level failures are handled by app/RouteError.tsx, which is wired as the
+ * router's errorElement and therefore catches things that actually go wrong.
+ * This one stays for the "connection lost" case, which is app state rather than
+ * a routing error.
+ */
 export function ErrorState() {
-  const { dispatch, flash } = useStore();
-  const theme = useTheme();
-  const { t } = theme;
+  const navigate = useNavigate();
+  const { flash } = useStore();
 
   return (
     <CenteredState
       art={
         <div
           aria-hidden
-          style={{
-            width: 60,
-            height: 60,
-            borderRadius: 20,
-            background: theme.accentSoft,
-            color: theme.accent,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            font: `700 26px/1 ${FONT.sans}`,
-            marginBottom: 24,
-          }}
+          className="mb-6 flex h-15 w-15 items-center justify-center rounded-2xl bg-accent-soft text-[1.625rem] font-bold text-accent"
         >
           !
         </div>
@@ -31,22 +28,15 @@ export function ErrorState() {
       title="Connexion perdue"
       body="Vos modifications sont enregistrées localement. Nous réessayons dès le retour du réseau."
       action={
-        <button
+        <Button
+          variant="outline"
           onClick={() => {
-            dispatch({ type: 'go', screen: 'home' });
+            navigate('/');
             flash('Reconnecté');
-          }}
-          style={{
-            height: 48,
-            padding: '0 24px',
-            borderRadius: 15,
-            border: `1.5px solid ${t.line2}`,
-            color: t.fg,
-            font: `600 14.5px/1 ${FONT.sans}`,
           }}
         >
           Réessayer
-        </button>
+        </Button>
       }
       footnote="ERR_NETWORK · 3 requêtes en attente"
     />

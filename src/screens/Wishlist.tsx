@@ -1,123 +1,73 @@
+import { useParams } from 'react-router-dom';
 import { GiftCard } from '../components/GiftCard';
 import { PlaceholderArt } from '../components/Placeholder';
 import { GIFTS } from '../data/fixtures';
-import { useIsOwner, useStore } from '../state/store';
-import { FONT, useTheme } from '../theme';
+import { useReservedCount, useStore, useViewerRole } from '../state/store';
+import { BackButton } from '../components/BackButton';
+import { Eyebrow, ScreenShell, cn } from '../ui';
 
 export function Wishlist() {
+  const { handle = 'sophie', slug = 'anniversaire' } = useParams();
   const { state, dispatch } = useStore();
-  const owner = useIsOwner();
-  const theme = useTheme();
-  const { t } = theme;
+  const role = useViewerRole(handle);
+  const owner = role === 'owner';
+  const reservedCount = useReservedCount(role);
   const grid = state.layout === 'grid';
 
   return (
-    <div style={{ padding: '0 0 120px', animation: 'kFadeUp .4s both' }}>
-      <div style={{ position: 'relative', height: 230 }}>
-        <PlaceholderArt
-          fill={t.surface}
-          hatch={6}
-          style={{ position: 'absolute', inset: 0 }}
-        />
-        <button
-          onClick={() => dispatch({ type: 'go', screen: 'profile' })}
-          aria-label="Retour au profil"
-          style={{
-            position: 'absolute',
-            top: 62,
-            left: 16,
-            width: 36,
-            height: 36,
-            borderRadius: '50%',
-            background: t.glass,
-            backdropFilter: 'blur(14px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: t.fg,
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <path
-              d="M9.5 3.5L5 8l4.5 4.5"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        <div style={{ position: 'absolute', left: 20, bottom: 20 }}>
-          <div
-            style={{
-              font: `400 10px/1 ${FONT.mono}`,
-              color: t.fg2,
-              letterSpacing: '.1em',
-              textTransform: 'uppercase',
-              marginBottom: 8,
-            }}
-          >
+    <ScreenShell flushTop className="px-0 sm:px-0">
+      <div className="relative h-56 sm:h-72">
+        <PlaceholderArt hatch={6} className="absolute inset-0" />
+        <BackButton to={`/u/${handle}`} label="Retour au profil" />
+        <div className="absolute bottom-5 left-5 sm:left-6">
+          <Eyebrow className="mb-2 text-fg2">
             Liste de {owner ? 'Sophie (vous)' : 'Sophie Marchand'}
-          </div>
-          <h2
-            style={{
-              font: `700 28px/1.1 ${FONT.sans}`,
-              letterSpacing: '-.03em',
-              color: t.fg,
-              margin: 0,
-            }}
-          >
+          </Eyebrow>
+          <h2 className="text-4xl leading-none font-bold tracking-tighter text-fg">
             Anniversaire
           </h2>
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '16px 20px 14px',
-        }}
-      >
-        <span style={{ font: `400 12px/1 ${FONT.mono}`, color: t.fg2 }}>
+      <div className="flex items-center gap-2 px-5 pt-4 pb-3.5 sm:px-6">
+        <span className="font-mono text-sm leading-none text-fg2">
           {/*
             The owner is told how many wishes exist, never how many are taken.
             A "2 réservées" counter would leak the very thing this app hides.
+            useReservedCount returns null for an owner, so there is no number
+            here to accidentally render.
           */}
-          {owner
-            ? `${GIFTS.length} envies`
-            : `${GIFTS.length} envies · ${
-                Object.keys(state.reserved).length
-              } réservées`}
+          {GIFTS.length} envies
+          {reservedCount !== null && ` · ${reservedCount} réservées`}
         </span>
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         <button
           onClick={() => dispatch({ type: 'toggleLayout' })}
-          style={{
-            font: `500 11.5px/1 ${FONT.sans}`,
-            color: theme.accent,
-            padding: '7px 11px',
-            borderRadius: 9,
-            background: theme.accentSoft,
-          }}
+          aria-pressed={!grid}
+          className="rounded-md bg-accent-soft px-2.5 py-1.5 text-xs leading-none font-medium text-accent transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {grid ? 'Vue liste' : 'Vue grille'}
         </button>
       </div>
 
       <div
-        style={{
-          padding: '0 20px',
-          ...(grid
-            ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }
-            : { display: 'flex', flexDirection: 'column', gap: 10 }),
-        }}
+        className={cn(
+          'px-5 sm:px-6',
+          grid
+            ? 'grid grid-cols-2 gap-3.5 md:grid-cols-3 lg:grid-cols-4'
+            : 'flex flex-col gap-2.5',
+        )}
       >
         {GIFTS.map((g) => (
-          <GiftCard key={g.id} gift={g} grid={grid} />
+          <GiftCard
+            key={g.id}
+            gift={g}
+            grid={grid}
+            role={role}
+            to={`/u/${handle}/listes/${slug}/${g.id}${g.pot ? '/cagnotte' : ''}`}
+          />
         ))}
       </div>
-    </div>
+    </ScreenShell>
   );
 }

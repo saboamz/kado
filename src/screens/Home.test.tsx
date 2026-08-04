@@ -22,17 +22,30 @@ it('shows every activity entry', () => {
 
 it('opens a profile from a birthday card', async () => {
   const user = userEvent.setup();
-  renderScreen(<Home />, { initial: { screen: 'home' } });
+  renderScreen(<Home />);
   const strip = screen.getByRole('region', { name: 'Anniversaires à venir' });
   await user.click(within(strip).getByText('Sophie'));
-  expect(screen.getByTestId('screen')).toHaveTextContent('profile');
+  expect(screen.getByTestId('path')).toHaveTextContent('/u/sophie');
 });
 
 it('routes the cagnotte entry to the pot screen', async () => {
   const user = userEvent.setup();
   renderScreen(<Home />);
   await user.click(screen.getByText(/La cagnotte du MacBook/));
-  expect(screen.getByTestId('screen')).toHaveTextContent('pot');
+  expect(screen.getByTestId('path')).toHaveTextContent(
+    '/u/sophie/listes/anniversaire/g1/cagnotte',
+  );
+});
+
+/**
+ * Feed rows are anchors now, not buttons that dispatched. That is the point of
+ * the move: middle-click and open-in-new-tab work, which no amount of onClick
+ * could give them.
+ */
+it('renders feed entries as real links', () => {
+  renderScreen(<Home />);
+  const entry = screen.getByText(/Thomas vient d/).closest('a');
+  expect(entry).toHaveAttribute('href', '/u/sophie/listes/anniversaire');
 });
 
 it('nudges about the empty Noël list', () => {

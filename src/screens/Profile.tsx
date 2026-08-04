@@ -1,3 +1,4 @@
+import { Link, useParams } from 'react-router-dom';
 import { PlaceholderArt } from '../components/Placeholder';
 import {
   COLLECTIONS,
@@ -5,63 +6,34 @@ import {
   PROFILE_BIO,
   PROFILE_STATS,
 } from '../data/social';
-import { useIsOwner, useStore } from '../state/store';
-import { eyebrow, FONT, useTheme } from '../theme';
+import { useStore, useViewerRole } from '../state/store';
+import { Button, Eyebrow, ScreenShell, Tag, cn } from '../ui';
 
 export function Profile() {
+  const { handle } = useParams();
   const { state, dispatch, flash } = useStore();
-  const owner = useIsOwner();
-  const theme = useTheme();
-  const { t } = theme;
+  // `/moi` has no handle and is always the viewer's own profile; `/u/:handle`
+  // is someone else's unless the handle happens to be theirs.
+  const role = useViewerRole(handle ?? 'sophie');
+  const owner = role === 'owner';
 
   return (
-    <div style={{ padding: '66px 0 120px', animation: 'kFadeUp .4s both' }}>
-      <div style={{ padding: '0 20px' }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 18,
-            marginBottom: 16,
-          }}
-        >
+    <ScreenShell className="px-0 sm:px-0">
+      <div className="px-5 sm:px-6">
+        <div className="mb-4 flex items-center gap-4.5">
           <PlaceholderArt
             label="PHOTO"
-            fill={t.surface}
             hatch={5}
-            style={{
-              width: 88,
-              height: 88,
-              flex: 'none',
-              borderRadius: '50%',
-            }}
+            round
+            className="h-22 w-22 flex-none bg-surface"
           />
-          <dl
-            style={{
-              flex: 1,
-              display: 'flex',
-              justifyContent: 'space-around',
-              margin: 0,
-            }}
-          >
+          <dl className="flex flex-1 justify-around">
             {PROFILE_STATS.map((s) => (
-              <div key={s.label} style={{ textAlign: 'center' }}>
-                <dd
-                  style={{
-                    font: `700 19px/1 ${FONT.sans}`,
-                    color: t.fg,
-                    margin: 0,
-                  }}
-                >
+              <div key={s.label} className="text-center">
+                <dd className="text-xl leading-none font-bold text-fg">
                   {s.value}
                 </dd>
-                <dt
-                  style={{
-                    font: `400 11px/1 ${FONT.sans}`,
-                    color: t.fg2,
-                    marginTop: 5,
-                  }}
-                >
+                <dt className="mt-1.5 text-xs leading-none text-fg2">
                   {s.label}
                 </dt>
               </div>
@@ -69,83 +41,35 @@ export function Profile() {
           </dl>
         </div>
 
-        <h2
-          style={{
-            font: `700 18px/1.2 ${FONT.sans}`,
-            letterSpacing: '-.02em',
-            color: t.fg,
-            margin: 0,
-          }}
-        >
+        <h2 className="text-xl leading-snug font-bold tracking-tight text-fg">
           {owner ? 'Sophie (vous)' : 'Sophie Marchand'}
         </h2>
-        <p
-          style={{
-            font: `400 13.5px/1.5 ${FONT.sans}`,
-            color: t.fg2,
-            margin: '5px 0 0',
-            textWrap: 'pretty',
-          }}
-        >
+        <p className="mt-1.5 text-pretty text-[0.84375rem] leading-relaxed text-fg2">
           {PROFILE_BIO}
         </p>
 
-        <ul
-          style={{
-            display: 'flex',
-            gap: 6,
-            marginTop: 11,
-            flexWrap: 'wrap',
-            listStyle: 'none',
-            padding: 0,
-          }}
-        >
+        <ul className="mt-3 flex list-none flex-wrap gap-1.5 p-0">
           {INTERESTS.map((label) => (
-            <li
-              key={label}
-              style={{
-                font: `500 11.5px/1 ${FONT.sans}`,
-                color: t.fg2,
-                padding: '7px 11px',
-                borderRadius: 9,
-                background: t.surface,
-              }}
-            >
-              {label}
+            <li key={label}>
+              <Tag tone="neutral">{label}</Tag>
             </li>
           ))}
         </ul>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-          <button
+        <div className="mt-4.5 flex gap-2">
+          <Button
+            block
             onClick={() =>
               flash(owner ? 'Édition du profil' : 'Vous suivez Sophie')
             }
-            style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 14,
-              background: theme.accent,
-              color: '#fff',
-              font: `600 14.5px/1 ${FONT.sans}`,
-              transition: 'transform .18s',
-            }}
           >
             {owner ? 'Modifier mon profil' : 'Suivre'}
-          </button>
-          <button
-            onClick={() => flash('Lien de partage copié')}
+          </Button>
+          <Button
+            variant="secondary"
             aria-label="Partager le profil"
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              background: t.surface,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: t.fg,
-            }}
+            onClick={() => flash('Lien de partage copié')}
+            className="w-11 flex-none px-0"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path
@@ -161,108 +85,70 @@ export function Profile() {
                 strokeLinecap="round"
               />
             </svg>
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '26px 20px 12px',
-        }}
-      >
-        <span style={eyebrow(theme)}>Collections</span>
-        <span style={{ font: `400 11.5px/1 ${FONT.sans}`, color: t.fg2 }}>
-          Tout voir
-        </span>
+      <div className="flex items-center justify-between px-5 pt-6.5 pb-3 sm:px-6">
+        <Eyebrow as="h3">Collections</Eyebrow>
+        <span className="text-xs leading-none text-fg2">Tout voir</span>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 12,
-          padding: '0 20px',
-        }}
-      >
-        {COLLECTIONS.map((c) => (
-          /*
-            Card and heart are siblings, not nested buttons: a button inside a
-            button is invalid markup and browsers disagree on how to focus it.
-            The heart is positioned against the cover wrapper so it stays put
-            regardless of how tall the caption below runs.
-          */
-          <div key={c.id}>
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => dispatch({ type: 'go', screen: c.to })}
-                aria-label={`Ouvrir la collection ${c.name}`}
-                style={{ display: 'block', width: '100%' }}
+      <div className="grid grid-cols-2 gap-3 px-5 sm:px-6 md:grid-cols-3 lg:grid-cols-4">
+        {COLLECTIONS.map((c) => {
+          // Every collection is a list belonging to this profile. Real slugs
+          // arrive with the API in P6.
+          const to = `/u/${handle ?? 'sophie'}/listes/${c.id}`;
+          return (
+            /*
+              Card and heart are siblings, not nested buttons: a button inside a
+              button is invalid markup and browsers disagree on how to focus it.
+              The heart is positioned against the cover wrapper so it stays put
+              regardless of how tall the caption below runs.
+            */
+            <div key={c.id}>
+              <div className="relative">
+                <Link
+                  to={to}
+                  aria-label={`Ouvrir la collection ${c.name}`}
+                  className="block w-full rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  <PlaceholderArt
+                    label="COUVERTURE"
+                    hatch={5}
+                    className="aspect-[1.05] w-full overflow-hidden rounded-xl transition-transform hover:scale-[1.01]"
+                  />
+                </Link>
+                <button
+                  aria-label={`Aimer ${c.name}`}
+                  aria-pressed={!!state.liked[c.id]}
+                  onClick={() => dispatch({ type: 'toggleLike', id: c.id })}
+                  className={cn(
+                    'absolute right-2 bottom-2 flex h-6.5 w-6.5 items-center justify-center rounded-full bg-glass text-xs leading-none backdrop-blur-[10px]',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+                    state.liked[c.id]
+                      ? 'text-accent motion-safe:animate-[kBeat_.4s]'
+                      : 'text-fg3 hover:text-fg2',
+                  )}
+                >
+                  ♥
+                </button>
+              </div>
+              <Link
+                to={to}
+                className="block w-full rounded-sm px-1 pt-2.5 pb-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
-                <PlaceholderArt
-                  label="COUVERTURE"
-                  hatch={5}
-                  style={{
-                    width: '100%',
-                    aspectRatio: '1.05',
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                    transition: 'transform .2s',
-                  }}
-                />
-              </button>
-              <button
-                aria-label={`Aimer ${c.name}`}
-                aria-pressed={!!state.liked[c.id]}
-                onClick={() => dispatch({ type: 'toggleLike', id: c.id })}
-                style={{
-                  position: 'absolute',
-                  right: 8,
-                  bottom: 8,
-                  width: 26,
-                  height: 26,
-                  borderRadius: '50%',
-                  background: t.glass,
-                  backdropFilter: 'blur(10px)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 12,
-                  lineHeight: 1,
-                  color: state.liked[c.id] ? theme.accent : t.fg3,
-                  animation: state.liked[c.id] ? 'kBeat .4s' : undefined,
-                }}
-              >
-                ♥
-              </button>
+                <span className="block text-[0.84375rem] leading-snug font-semibold text-fg">
+                  {c.name}
+                </span>
+                <span className="mt-1 block font-mono text-xs leading-none text-fg3">
+                  {c.count}
+                </span>
+              </Link>
             </div>
-            <button
-              onClick={() => dispatch({ type: 'go', screen: c.to })}
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: '10px 4px 2px',
-              }}
-            >
-              <div style={{ font: `600 13.5px/1.2 ${FONT.sans}`, color: t.fg }}>
-                {c.name}
-              </div>
-              <div
-                style={{
-                  font: `400 11.5px/1 ${FONT.mono}`,
-                  color: t.fg3,
-                  marginTop: 4,
-                }}
-              >
-                {c.count}
-              </div>
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
-    </div>
+    </ScreenShell>
   );
 }

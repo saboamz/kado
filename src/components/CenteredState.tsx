@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
-import { FONT, useTheme } from '../theme';
 
 /**
  * Full-screen message with artwork, title, body and one action. The empty and
- * error screens are the same layout with different content.
+ * error screens are the same layout with different content — the cleanest
+ * abstraction the prototype had, kept as-is and moved onto the token scale.
+ *
+ * `minHeight: 852` was the device height hardcoded from DEVICE.height; it is
+ * now `min-h-dvh`, which is what it always meant.
  */
 export function CenteredState({
   art,
@@ -18,53 +21,18 @@ export function CenteredState({
   action: ReactNode;
   footnote?: string;
 }) {
-  const { t } = useTheme();
   return (
-    <div
-      style={{
-        minHeight: 852,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '60px 34px',
-        textAlign: 'center',
-        animation: 'kFadeUp .4s both',
-      }}
-    >
+    <div className="flex min-h-dvh flex-col items-center justify-center px-8 py-16 text-center motion-safe:animate-[kFadeUp_.4s_both]">
       {art}
-      <h3
-        style={{
-          font: `700 21px/1.25 ${FONT.sans}`,
-          letterSpacing: '-.02em',
-          color: t.fg,
-          margin: '0 0 9px',
-        }}
-      >
+      <h3 className="mb-2.5 text-2xl leading-tight font-bold tracking-tight text-fg">
         {title}
       </h3>
-      <p
-        style={{
-          font: `400 14px/1.55 ${FONT.sans}`,
-          color: t.fg2,
-          margin: '0 0 24px',
-          maxWidth: 250,
-          textWrap: 'pretty',
-        }}
-      >
-        {body}
-      </p>
+      <p className="mb-6 max-w-[16rem] text-pretty text-fg2">{body}</p>
       {action}
       {footnote && (
-        <div
-          style={{
-            font: `400 10.5px/1 ${FONT.mono}`,
-            color: t.fg3,
-            marginTop: 18,
-          }}
-        >
+        <p className="mt-4.5 font-mono text-xs leading-none text-fg3">
           {footnote}
-        </div>
+        </p>
       )}
     </div>
   );

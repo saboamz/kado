@@ -1,8 +1,9 @@
+import { Link } from 'react-router-dom';
 import { PlaceholderArt } from './Placeholder';
-import type { Gift } from '../data/types';
+import type { Gift, Role } from '../data/types';
 import { stars } from '../data/fixtures';
-import { useReservation, useStore } from '../state/store';
-import { FONT, useTheme } from '../theme';
+import { useReservation } from '../state/store';
+import { cn } from '../ui';
 
 /**
  * A gift in a wishlist.
@@ -10,12 +11,22 @@ import { FONT, useTheme } from '../theme';
  * The reservation flag comes from useReservation, which returns null for the
  * owner. That is the whole enforcement: there is no `owner &&` guard here to
  * forget, because an owner is never given a value to render.
+ *
+ * A Link rather than a button: opening a gift is navigation, so middle-click,
+ * cmd-click and "open in new tab" should all work.
  */
-export function GiftCard({ gift, grid }: { gift: Gift; grid: boolean }) {
-  const { dispatch } = useStore();
-  const reservation = useReservation(gift.id);
-  const theme = useTheme();
-  const { t } = theme;
+export function GiftCard({
+  gift,
+  grid,
+  role,
+  to,
+}: {
+  gift: Gift;
+  grid: boolean;
+  role: Role;
+  to: string;
+}) {
+  const reservation = useReservation(gift.id, role);
 
   const flag = gift.pot
     ? 'Cagnotte'
@@ -26,105 +37,59 @@ export function GiftCard({ gift, grid }: { gift: Gift; grid: boolean }) {
         : null;
 
   return (
-    <button
-      onClick={() => dispatch({ type: 'openGift', id: gift.id, pot: gift.pot })}
-      style={{
-        textAlign: 'left',
-        borderRadius: 22,
-        background: t.surface,
-        overflow: 'hidden',
-        transition: 'transform .2s',
-        ...(grid ? {} : { display: 'flex', alignItems: 'center', gap: 0 }),
-      }}
+    <Link
+      to={to}
+      className={cn(
+        'group overflow-hidden rounded-3xl bg-surface text-left transition-transform',
+        'hover:bg-chip focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        'active:scale-[.99]',
+        grid ? 'block' : 'flex items-center',
+      )}
     >
       <div
-        style={{
-          position: 'relative',
-          ...(grid
-            ? { width: '100%', aspectRatio: '1' }
-            : { width: 96, height: 96, flex: 'none' }),
-        }}
+        className={cn(
+          'relative',
+          grid ? 'aspect-square w-full' : 'h-24 w-24 flex-none',
+        )}
       >
-        <PlaceholderArt
-          label={gift.art}
-          hatch={5}
-          style={{ width: '100%', height: '100%' }}
-        />
+        <PlaceholderArt label={gift.art} hatch={5} className="absolute inset-0" />
         {flag && (
           <span
-            style={{
-              position: 'absolute',
-              left: 8,
-              top: 8,
-              font: `500 10px/1 ${FONT.sans}`,
-              padding: '6px 8px',
-              borderRadius: 8,
-              backdropFilter: 'blur(10px)',
-              ...(gift.pot
-                ? { background: theme.accent, color: '#fff' }
-                : {
-                    background: theme.dark
-                      ? 'rgba(16,16,19,.8)'
-                      : 'rgba(255,255,255,.9)',
-                    color: t.fg2,
-                  }),
-            }}
+            className={cn(
+              'absolute top-2 left-2 rounded-sm px-2 py-1.5 text-[0.625rem] leading-none font-medium backdrop-blur-[10px]',
+              gift.pot
+                ? 'bg-accent text-on-accent'
+                : // Was a manual `theme.dark ? 'rgba(16,16,19,.8)' : ...` branch
+                  // retyping DARK.glass by hand. It is just the glass token.
+                  'bg-glass text-fg2',
+            )}
           >
             {flag}
           </span>
         )}
       </div>
 
-      <div
-        style={{
-          padding: grid ? '12px 13px 14px' : '0 14px',
-          flex: 1,
-          minWidth: 0,
-        }}
-      >
-        <div
-          style={{
-            font: `600 13.5px/1.3 ${FONT.sans}`,
-            color: t.fg,
-            textWrap: 'pretty',
-          }}
-        >
+      <div className={cn('min-w-0 flex-1', grid ? 'px-3.5 pt-3 pb-3.5' : 'px-3.5')}>
+        <p className="text-pretty text-[0.84375rem] leading-tight font-semibold text-fg">
           {gift.name}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            marginTop: 5,
-          }}
-        >
-          <span style={{ font: `500 12.5px/1 ${FONT.mono}`, color: t.fg }}>
+        </p>
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <span className="font-mono text-sm leading-none font-medium text-fg">
             {gift.price}
           </span>
           <span
             aria-label={`Priorité ${gift.prio} sur 3`}
-            style={{
-              font: `400 11px/1 ${FONT.sans}`,
-              color: theme.accent,
-              letterSpacing: '.1em',
-            }}
+            className="text-xs leading-none tracking-eyebrow text-accent"
           >
             {stars(gift.prio)}
           </span>
         </div>
         {reservation && (
-          <div
-            style={{
-              font: `400 10.5px/1.3 ${FONT.mono}`,
-              color: t.fg3,
-              marginTop: 7,
-            }}
-          >
+          <p className="mt-2 font-mono text-[0.65625rem] leading-tight text-fg3">
             Le propriétaire ne le voit pas
-          </div>
+          </p>
         )}
       </div>
-    </button>
+    </Link>
   );
 }
