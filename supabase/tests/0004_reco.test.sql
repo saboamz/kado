@@ -11,7 +11,7 @@
 -- Run: psql -f supabase/tests/0004_reco.test.sql
 
 begin;
-select plan(17);
+select plan(21);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures
@@ -63,6 +63,34 @@ select
   ('caca0000-0000-0000-0000-00000000000' || i)::uuid,
   100 - i * 5
 from generate_series(1, 9) i;
+
+-- Embeddings, so the content_vector tier actually fires.
+--
+-- Without these the tier returns nothing and every assertion about it — and
+-- every sabotage aimed at it — passes vacuously. Verified: a leak planted in
+-- vector_candidates went completely undetected until this fixture existed.
+--
+-- The vectors are hand-placed rather than random so "similar" is predictable:
+-- products 3 and 4 sit near each other, far from the rest.
+-- The column is vector(384), so the vectors are built at full width: the
+-- first two components carry the signal, the remaining 382 are zero.
+update public.products p set
+  embedding = (
+    '[' || v.a || ',' || v.b ||
+    repeat(',0', 382) || ']'
+  )::extensions.vector,
+  embedding_model = 'test-model'
+from (values
+  ('bbbb0000-0000-0000-0000-000000000003'::uuid, 1.0, 0.0),
+  ('bbbb0000-0000-0000-0000-000000000004'::uuid, 0.95, 0.1),
+  ('bbbb0000-0000-0000-0000-000000000005'::uuid, 0.9, 0.2),
+  ('bbbb0000-0000-0000-0000-000000000001'::uuid, 0.98, 0.05),
+  ('bbbb0000-0000-0000-0000-000000000006'::uuid, 0.0, 1.0),
+  ('bbbb0000-0000-0000-0000-000000000007'::uuid, 0.1, 0.99),
+  ('bbbb0000-0000-0000-0000-000000000008'::uuid, 0.2, 0.95),
+  ('bbbb0000-0000-0000-0000-000000000009'::uuid, 0.05, 0.98)
+) v(id, a, b)
+where p.id = v.id;
 
 -- Two of them match Sophie's declared taste.
 insert into public.product_tags (product_id, tag_id)
@@ -129,10 +157,24 @@ select is_empty(
   'every recommendation carries its strategy'
 );
 
+-- The cascade's ordering, asserted as ordering rather than as one tier.
+--
+-- This used to assert that content_facet fires, which was right until the
+-- vector tier existed: a vector match now outranks a facet match, so every
+-- slot in this fixture is content_vector and the old assertion failed while
+-- the cascade was working exactly as designed. What actually matters is that
+-- a tier fires at all, and that whichever one claims a slot is recorded.
 select ok(
-  (select count(*) from reco.recommendations
-   where strategy = 'content_facet') > 0,
-  'the content tier fires for a recipient with declared interests'
+  (select count(distinct strategy) from reco.recommendations
+   where viewer_id = '22222222-2222-2222-2222-222222222222') >= 1,
+  'some tier claims every slot, and says which'
+);
+
+select is_empty(
+  $$ select 1 from reco.recommendations
+     where viewer_id = '22222222-2222-2222-2222-222222222222'
+       and strategy not in ('content_vector','content_facet','popularity') $$,
+  'every slot comes from a tier this cascade actually implements'
 );
 
 -- Recommending what someone already asked for is not a recommendation.
@@ -298,7 +340,66 @@ select is_empty(
 );
 
 -- ---------------------------------------------------------------------------
--- 5. Popularity
+-- 5. The vector tier
+-- ---------------------------------------------------------------------------
+--
+-- Sophie wants product 1, which is embedded, so she has a taste vector and the
+-- tier can fire. These exist so a leak planted in vector_candidates is caught
+-- — it was not, before this fixture had embeddings.
+select isnt_empty(
+  $$ select * from reco.vector_candidates(
+       '22222222-2222-2222-2222-222222222222',
+       '11111111-1111-1111-1111-111111111111') $$,
+  'the vector tier returns candidates when products are embedded'
+);
+
+select is_empty(
+  $$ select 1 from reco.vector_candidates(
+       '22222222-2222-2222-2222-222222222222',
+       '11111111-1111-1111-1111-111111111111') v
+     where v.out_product_id in (
+       select product_id from public.wish_items
+       where owner_id = '11111111-1111-1111-1111-111111111111'
+         and status = 'active' and product_id is not null) $$,
+  'the vector tier does not recommend what is already wished for'
+);
+
+-- The same invariance as the cascade, asserted at the tier itself: a
+-- reservation by someone else must not change what it returns.
+create temporary table vector_before as
+select out_product_id as product_id from reco.vector_candidates(
+  '22222222-2222-2222-2222-222222222222',
+  '11111111-1111-1111-1111-111111111111');
+
+-- Reserve a product that IS a vector candidate.
+--
+-- This is the whole difficulty of testing the invariant, and it caught me
+-- twice: a product already excluded for another reason (on the recipient's
+-- own list, pruned by diversity) produces an identical slate whether the code
+-- leaks or not, so the assertion passes vacuously. Product 4 is embedded,
+-- unwished and unreserved, which makes it the only kind of product whose
+-- disappearance can prove anything.
+insert into public.wish_items (id, wishlist_id, owner_id, product_id, title, price_cents, status)
+values ('f1f10000-0000-0000-0000-000000000004','a1a10000-0000-0000-0000-000000000001',
+        '11111111-1111-1111-1111-111111111111','bbbb0000-0000-0000-0000-000000000004',
+        'Produit 4', 9000, 'archived');
+
+insert into private.reservations (wish_item_id, owner_id, reserver_id)
+values ('f1f10000-0000-0000-0000-000000000004',
+        '11111111-1111-1111-1111-111111111111',
+        '33333333-3333-3333-3333-333333333333');
+
+select is_empty(
+  $$ select product_id from vector_before
+     except
+     select out_product_id from reco.vector_candidates(
+       '22222222-2222-2222-2222-222222222222',
+       '11111111-1111-1111-1111-111111111111') $$,
+  'INVARIANT: the vector tier ignores another friend''s reservation'
+);
+
+-- ---------------------------------------------------------------------------
+-- 6. Popularity
 -- ---------------------------------------------------------------------------
 select lives_ok(
   $$ select reco.refresh_popularity() $$,

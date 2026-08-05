@@ -138,7 +138,7 @@ jobs:
           test "$(grep -c '^ok ' /tmp/schema.tap)"  -ge 75
           test "$(grep -c '^ok ' /tmp/secrecy.tap)" -ge 36
           test "$(grep -c '^ok ' /tmp/events.tap)"  -ge 20
-          test "$(grep -c '^ok ' /tmp/reco.tap)"    -ge 17
+          test "$(grep -c '^ok ' /tmp/reco.tap)"    -ge 21
           test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
 
   # The single worst mistake available in a Supabase app is shipping the
