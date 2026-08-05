@@ -7,8 +7,32 @@ import {
 } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StoreProvider, useStore, type State } from '../state/store';
+import {
+  StubSessionProvider,
+  type Viewer,
+} from '../auth/SessionContext';
 import { server } from './msw/server';
 import { resetDb } from './msw/handlers';
+
+/**
+ * The two viewers every screen test needs.
+ *
+ * Sophie owns the fixture list, so rendering as her is the owner's view — the
+ * one the secrecy rule is about. Marc is a friend, and the default.
+ */
+export const SOPHIE: Viewer = {
+  id: '11111111-1111-1111-1111-111111111111',
+  handle: 'sophie',
+  displayName: 'Sophie Marchand',
+  onboarded: true,
+};
+
+export const MARC: Viewer = {
+  id: '22222222-2222-2222-2222-222222222222',
+  handle: 'marc',
+  displayName: 'Marc',
+  onboarded: true,
+};
 
 /**
  * Surfaces the bits of app state that tests assert on.
@@ -45,6 +69,7 @@ export function renderScreen(
     dark = false,
     route = '/',
     path,
+    viewer = MARC,
   }: {
     initial?: Partial<State>;
     dark?: boolean;
@@ -52,6 +77,12 @@ export function renderScreen(
     route?: string;
     /** The route pattern, when the screen reads params (e.g. '/u/:handle'). */
     path?: string;
+    /**
+     * Who is looking. Ownership is `viewer.handle === the handle in the URL`,
+     * so pass SOPHIE to render a screen as its owner. Defaults to a friend,
+     * matching the app's own fail-safe direction.
+     */
+    viewer?: Viewer | null;
   } = {},
 ) {
   function Wrapper({ children }: { children: ReactNode }) {
@@ -82,9 +113,11 @@ export function renderScreen(
 
     return (
       <QueryClientProvider client={makeTestQueryClient()}>
-        <StoreProvider initial={{ ...initial, dark }}>
-          <RouterProvider router={router} />
-        </StoreProvider>
+        <StubSessionProvider viewer={viewer}>
+          <StoreProvider initial={{ ...initial, dark }}>
+            <RouterProvider router={router} />
+          </StoreProvider>
+        </StubSessionProvider>
       </QueryClientProvider>
     );
   }

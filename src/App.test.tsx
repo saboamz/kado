@@ -1,24 +1,80 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { useState } from 'react';
+import {
+  createMemoryRouter,
+  Outlet,
+  RouterProvider,
+  type RouteObject,
+} from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { routes } from './app/routes';
+import { RouteError } from './app/RouteError';
+import { Toast } from './components/Toast';
+import { StoreProvider, useStore } from './state/store';
+import { StubSessionProvider, type Viewer } from './auth/SessionContext';
+import { MARC, SOPHIE } from './test/render';
+
+function ToastHost() {
+  const { toast } = useStore();
+  return toast ? <Toast message={toast} /> : null;
+}
 
 /**
- * Renders the real route tree at a real URL.
+ * RootLayout, with the session stubbed.
+ *
+ * The real RootLayout mounts SessionProvider, which talks to Supabase and —
+ * with no backend configured under test — resolves to a signed-out viewer.
+ * Wrapping RouterProvider from the outside cannot fix that: the inner provider
+ * would shadow the stub. So this test substitutes the root element and keeps
+ * every child route below it untouched, which is the part under test.
+ */
+function TestRoot({ viewer }: { viewer: Viewer | null }) {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      }),
+  );
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <StubSessionProvider viewer={viewer}>
+        <StoreProvider>
+          <div>
+            <Outlet />
+            <ToastHost />
+          </div>
+        </StoreProvider>
+      </StubSessionProvider>
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * Renders the real route tree at a real URL, as a given viewer.
  *
  * The prototype drove this test through the dev chrome — a sidebar of twelve
  * screen buttons and a Rôle toggle. Both are gone: you are an owner because
- * the list in the URL is yours, not because you flipped a switch.
+ * the list in the URL is yours AND the signed-in profile is yours, not because
+ * you flipped a switch. `viewer` is the second half of that: it says who is
+ * looking, which the URL alone cannot.
  */
-function renderAt(path: string) {
-  const router = createMemoryRouter(routes, { initialEntries: [path] });
+function renderAt(path: string, viewer: Viewer | null = MARC) {
+  const testRoutes: RouteObject[] = [
+    {
+      element: <TestRoot viewer={viewer} />,
+      errorElement: <RouteError />,
+      children: routes[0].children,
+    },
+  ];
+  const router = createMemoryRouter(testRoutes, { initialEntries: [path] });
   return render(<RouterProvider router={router} />);
 }
 
-// `sophie` is the signed-in handle (see useViewerRole); any other handle is
-// someone else's list, viewed as a friend.
-const OWN_LIST = '/u/sophie/listes/anniversaire';
-const FRIEND_LIST = '/u/marc/listes/anniversaire';
+// The list is always Sophie's. Who changes is the viewer: as SOPHIE it is her
+// own list (the owner's view), as MARC it is a friend looking at it.
+const LIST = '/u/sophie/listes/anniversaire';
 
 it('lands on the home screen', () => {
   renderAt('/');
@@ -49,7 +105,7 @@ it('shows the error screen for an unknown URL', () => {
  */
 it('never leaks a reservation to the owner', async () => {
   const user = userEvent.setup();
-  const { unmount } = renderAt(FRIEND_LIST);
+  const { unmount } = renderAt(LIST, MARC);
 
   // As a friend, open the AirPods and reserve them.
   await user.click(screen.getByText('AirPods Pro 3'));
@@ -63,8 +119,8 @@ it('never leaks a reservation to the owner', async () => {
 
   unmount();
 
-  // The owner's own list: every trace is gone.
-  renderAt(OWN_LIST);
+  // The same list, seen by Sophie herself: every trace is gone.
+  renderAt(LIST, SOPHIE);
   expect(screen.queryByText('Réservé par vous')).not.toBeInTheDocument();
   expect(screen.queryByText('Déjà réservé')).not.toBeInTheDocument();
   expect(screen.queryByText(/réservées/)).not.toBeInTheDocument();
@@ -87,13 +143,13 @@ it('never leaks a reservation to the owner', async () => {
 
 it('hides the cagnotte from the owner', async () => {
   // A friend sees the pot in full.
-  const { unmount } = renderAt(`${FRIEND_LIST}/g3/cagnotte`);
+  const { unmount } = renderAt(`${LIST}/g3/cagnotte`, MARC);
   expect(screen.getByRole('region', { name: 'Cagnotte' })).toBeInTheDocument();
   expect(screen.getByText('650 € récoltés')).toBeInTheDocument();
   unmount();
 
   // The owner gets no pot section at all — not an empty one.
-  renderAt(`${OWN_LIST}/g3/cagnotte`);
+  renderAt(`${LIST}/g3/cagnotte`, SOPHIE);
   expect(
     screen.queryByRole('region', { name: 'Cagnotte' }),
   ).not.toBeInTheDocument();

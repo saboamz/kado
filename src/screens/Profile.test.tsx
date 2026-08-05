@@ -2,14 +2,15 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Profile } from './Profile';
 import { COLLECTIONS, INTERESTS } from '../data/social';
-import { renderScreen } from '../test/render';
+import { renderScreen, MARC, SOPHIE } from '../test/render';
 
 /**
  * `/moi` is always the viewer's own profile; `/u/:handle` is someone else's
- * unless the handle is the signed-in one. There is no `role` field to set.
+ * unless the handle matches the signed-in viewer. There is no `role` field to
+ * set — the URL says whose profile, the viewer says who is reading it.
  */
-const asFriend = { route: '/u/marc', path: '/u/:handle' };
-const asOwner = { route: '/moi' };
+const asFriend = { route: '/u/sophie', path: '/u/:handle', viewer: MARC };
+const asOwner = { route: '/moi', viewer: SOPHIE };
 
 it('names the person and lists their interests', () => {
   renderScreen(<Profile />, asFriend);
@@ -30,6 +31,20 @@ it('addresses the owner as themselves', () => {
   expect(
     screen.getByRole('button', { name: 'Modifier mon profil' }),
   ).toBeInTheDocument();
+});
+
+it('treats /moi as your own profile whoever you are', () => {
+  // /moi carries no :handle, so the screen falls back to the signed-in
+  // handle. It used to fall back to the literal 'sophie', which the hardcoded
+  // session made right by accident — against a real session it offered Marc a
+  // "Suivre" button on his own profile.
+  renderScreen(<Profile />, { route: '/moi', viewer: MARC });
+  expect(
+    screen.getByRole('button', { name: 'Modifier mon profil' }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Suivre' }),
+  ).not.toBeInTheDocument();
 });
 
 it('offers a friend the follow action', () => {

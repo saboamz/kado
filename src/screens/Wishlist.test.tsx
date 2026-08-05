@@ -2,16 +2,18 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Wishlist } from './Wishlist';
 import { GIFTS } from '../data/fixtures';
-import { renderScreen } from '../test/render';
+import { renderScreen, MARC, SOPHIE } from '../test/render';
 
 /**
- * Ownership comes from the URL now, not a `role` field: `sophie` is the
- * signed-in handle, so `/u/sophie/...` is the owner's own list and any other
- * handle is viewed as a friend.
+ * Ownership is the URL's handle matched against the signed-in viewer, not a
+ * `role` field. The list below is always Sophie's; what changes is who is
+ * looking at it — as Sophie it is her own list, as Marc it is a friend's view
+ * of it.
  */
 const LIST_PATH = '/u/:handle/listes/:slug';
-const asOwner = { route: '/u/sophie/listes/anniversaire', path: LIST_PATH };
-const asFriend = { route: '/u/marc/listes/anniversaire', path: LIST_PATH };
+const LIST = '/u/sophie/listes/anniversaire';
+const asOwner = { route: LIST, path: LIST_PATH, viewer: SOPHIE };
+const asFriend = { route: LIST, path: LIST_PATH, viewer: MARC };
 
 it('lists every gift', () => {
   renderScreen(<Wishlist />, asFriend);
@@ -33,7 +35,7 @@ it('opens a gift detail', async () => {
   renderScreen(<Wishlist />, asFriend);
   await user.click(screen.getByText('AirPods Pro 3'));
   expect(screen.getByTestId('path')).toHaveTextContent(
-    '/u/marc/listes/anniversaire/g1',
+    '/u/sophie/listes/anniversaire/g1',
   );
 });
 
@@ -42,7 +44,7 @@ it('sends a collaborative gift to the pot screen', async () => {
   renderScreen(<Wishlist />, asFriend);
   await user.click(screen.getByText('MacBook Air 15″ M4'));
   expect(screen.getByTestId('path')).toHaveTextContent(
-    '/u/marc/listes/anniversaire/g3/cagnotte',
+    '/u/sophie/listes/anniversaire/g3/cagnotte',
   );
 });
 

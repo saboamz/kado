@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { StoreProvider, useStore } from '../state/store';
 import { Toast } from '../components/Toast';
 import { createQueryClient } from '../lib/queryClient';
+import { SessionProvider } from '../auth/SessionContext';
 
 function ToastHost() {
   const { toast } = useStore();
@@ -25,12 +26,16 @@ export function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <StoreProvider>
-        <div className="min-h-dvh bg-bg text-fg font-sans">
-          <Outlet />
-          <ToastHost />
-        </div>
-      </StoreProvider>
+      {/* Inside QueryClientProvider: the session resolves the viewer's profile
+          row through a query, and outside it that hook would throw. */}
+      <SessionProvider>
+        <StoreProvider>
+          <div className="min-h-dvh bg-bg text-fg font-sans">
+            <Outlet />
+            <ToastHost />
+          </div>
+        </StoreProvider>
+      </SessionProvider>
     </QueryClientProvider>
   );
 }

@@ -1,28 +1,36 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GiftDetail } from './GiftDetail';
-import { renderScreen } from '../test/render';
+import { renderScreen, MARC, SOPHIE } from '../test/render';
 
 /**
- * Ownership comes from the URL now, not a `role` field: `sophie` is the
- * signed-in handle, so a list under `/u/sophie/...` is the owner's own and any
- * other handle is viewed as a friend.
+ * Ownership is the URL's handle matched against the signed-in viewer, not a
+ * `role` field. The list is always Sophie's; what changes is who is looking —
+ * as Sophie it is her own gift, as Marc it is a friend's view of it.
  */
 const DETAIL_PATH = '/u/:handle/listes/:slug/:itemId';
 const POT_PATH = '/u/:handle/listes/:slug/:itemId/cagnotte';
+const LIST = '/u/sophie/listes/anniversaire';
 
 const asFriend = (id: string) => ({
-  route: `/u/marc/listes/anniversaire/${id}`,
+  route: `${LIST}/${id}`,
   path: DETAIL_PATH,
+  viewer: MARC,
 });
 const asOwner = (id: string) => ({
-  route: `/u/sophie/listes/anniversaire/${id}`,
+  route: `${LIST}/${id}`,
   path: DETAIL_PATH,
+  viewer: SOPHIE,
 });
-const onPot = { route: '/u/marc/listes/anniversaire/g3/cagnotte', path: POT_PATH };
-const onPotAsOwner = {
-  route: '/u/sophie/listes/anniversaire/g3/cagnotte',
+const onPot = {
+  route: `${LIST}/g3/cagnotte`,
   path: POT_PATH,
+  viewer: MARC,
+};
+const onPotAsOwner = {
+  route: `${LIST}/g3/cagnotte`,
+  path: POT_PATH,
+  viewer: SOPHIE,
 };
 
 describe('the gift', () => {
@@ -50,9 +58,7 @@ describe('the gift', () => {
     const user = userEvent.setup();
     renderScreen(<GiftDetail />, asFriend('g1'));
     await user.click(screen.getByRole('link', { name: 'Retour à la liste' }));
-    expect(screen.getByTestId('path')).toHaveTextContent(
-      '/u/marc/listes/anniversaire',
-    );
+    expect(screen.getByTestId('path')).toHaveTextContent(LIST);
   });
 });
 
@@ -178,8 +184,9 @@ describe('the cagnotte', () => {
     // Arriving from the feed's cagnotte entry: the URL ends in /cagnotte but
     // points at g1, which has no pot of its own.
     renderScreen(<GiftDetail />, {
-      route: '/u/marc/listes/anniversaire/g1/cagnotte',
+      route: `${LIST}/g1/cagnotte`,
       path: POT_PATH,
+      viewer: MARC,
     });
     expect(screen.getByRole('region', { name: 'Cagnotte' })).toBeInTheDocument();
   });

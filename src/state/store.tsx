@@ -11,6 +11,7 @@ import {
 } from 'react';
 import type { Reserver, Role } from '../data/types';
 import { POT_TOTAL } from '../data/fixtures';
+import { useViewer } from '../auth/SessionContext';
 
 /**
  * What is left of the store after the router took its share.
@@ -128,20 +129,23 @@ export function useStore(): Store {
 /**
  * Who the current viewer is relative to the wishlist being shown.
  *
- * In the prototype this was `state.role`, flipped by a toggle in the dev
- * chrome. That toggle is gone: ownership is now derived from the URL, because
- * a list belongs to the handle in its path.
+ * The prototype had a `role` field flipped by a toggle in the dev chrome; the
+ * router phase replaced it with a hardcoded handle; this compares the list's
+ * owner against the actual signed-in profile.
  *
- * This is still a client-side derivation and therefore still not a security
- * boundary — it decides what to render, not what the viewer is allowed to
- * receive. The real guarantee arrives in P5, where an owner's session cannot
- * obtain reservation rows at all. Until then the secrecy rule remains
- * cosmetic, exactly as it is today.
+ * This decides what to RENDER and nothing more. It is not a security boundary
+ * and must never be treated as one: the server makes every secrecy decision
+ * from `auth.uid()`, so a viewer who tampers with this changes what their own
+ * UI draws and not one byte of what the API will hand them.
+ *
+ * Signed out, everyone is a friend. That direction matters — failing the other
+ * way would show an unauthenticated visitor the owner's view, which is the
+ * view that hides things and would therefore look like it worked.
  */
-const SESSION_HANDLE = 'sophie';
-
 export function useViewerRole(ownerHandle: string | undefined): Role {
-  return ownerHandle === SESSION_HANDLE ? 'owner' : 'friend';
+  const viewer = useViewer();
+  if (!viewer || !ownerHandle) return 'friend';
+  return ownerHandle === viewer.handle ? 'owner' : 'friend';
 }
 
 /**

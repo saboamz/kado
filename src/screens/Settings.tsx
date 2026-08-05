@@ -1,5 +1,9 @@
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { settingsGroups } from '../data/settings';
 import { useStore } from '../state/store';
+import { useViewer } from '../auth/SessionContext';
+import { supabase } from '../lib/supabase';
 import { Card, Eyebrow, ScreenShell, cn } from '../ui';
 
 export function Settings() {
@@ -9,6 +13,19 @@ export function Settings() {
    * static row awaiting a real settings API.
    */
   const { state, dispatch } = useStore();
+  const viewer = useViewer();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    // Clear the cache, don't just invalidate it: cached wishlists and
+    // reservation state belong to the session that just ended, and leaving
+    // them in memory means the next person to sign in on this device sees a
+    // flash of someone else's data before the refetch lands.
+    queryClient.clear();
+    navigate('/connexion', { replace: true });
+  }
 
   return (
     <ScreenShell>
@@ -85,6 +102,38 @@ export function Settings() {
           l&rsquo;API du propriétaire, même chiffrées.
         </div>
       </Card>
+
+      {viewer && (
+        <section className="mt-6">
+          <Eyebrow as="h3" className="mb-2.5 ml-0.5">
+            Compte
+          </Eyebrow>
+          <Card pad="none" radius="xl" className="overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3.5">
+              <div className="flex-1 text-left">
+                <div className="text-base leading-tight font-medium text-fg">
+                  {viewer.displayName}
+                </div>
+                <div className="mt-1 font-mono text-xs leading-snug text-fg3">
+                  @{viewer.handle}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={signOut}
+              className={cn(
+                'flex w-full items-center px-4 py-3.5 text-left',
+                'border-t border-line text-base font-medium text-accent',
+                'transition-colors hover:bg-chip',
+                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
+              )}
+            >
+              Se déconnecter
+            </button>
+          </Card>
+        </section>
+      )}
     </ScreenShell>
   );
 }

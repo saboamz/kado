@@ -9,10 +9,21 @@ import {
   useViewerRole,
   type State,
 } from './store';
+import { StubSessionProvider, type Viewer } from '../auth/SessionContext';
+import { MARC, SOPHIE } from '../test/render';
 
-const wrap = (initial?: Partial<State>) =>
+/**
+ * The store hooks need a session too now: useViewerRole reads the signed-in
+ * viewer rather than a hardcoded handle, so a wrapper without a session
+ * provider makes every caller a friend regardless of the URL.
+ */
+const wrap = (initial?: Partial<State>, viewer: Viewer | null = MARC) =>
   function Wrapper({ children }: { children: ReactNode }) {
-    return <StoreProvider initial={initial}>{children}</StoreProvider>;
+    return (
+      <StubSessionProvider viewer={viewer}>
+        <StoreProvider initial={initial}>{children}</StoreProvider>
+      </StubSessionProvider>
+    );
   };
 
 describe('reservations', () => {
@@ -103,15 +114,27 @@ describe('the secrecy rule', () => {
 
 describe('useViewerRole', () => {
   it('treats the signed-in handle as the owner', () => {
+    // Sophie, looking at Sophie's list.
     const { result } = renderHook(() => useViewerRole('sophie'), {
-      wrapper: wrap(),
+      wrapper: wrap(undefined, SOPHIE),
     });
     expect(result.current).toBe('owner');
   });
 
   it('treats anyone else as a friend', () => {
-    const { result } = renderHook(() => useViewerRole('marc'), {
-      wrapper: wrap(),
+    // Marc, looking at Sophie's list.
+    const { result } = renderHook(() => useViewerRole('sophie'), {
+      wrapper: wrap(undefined, MARC),
+    });
+    expect(result.current).toBe('friend');
+  });
+
+  it('treats a signed-out visitor as a friend, never as the owner', () => {
+    // Failing open here would hand an anonymous visitor the OWNER's view —
+    // the view that hides reservations, the pot and the count — so the leak
+    // would look exactly like the feature working.
+    const { result } = renderHook(() => useViewerRole('sophie'), {
+      wrapper: wrap(undefined, null),
     });
     expect(result.current).toBe('friend');
   });
@@ -120,7 +143,7 @@ describe('useViewerRole', () => {
     // Failing open here would show reservations to someone who should not see
     // them; failing closed only hides a badge.
     const { result } = renderHook(() => useViewerRole(undefined), {
-      wrapper: wrap(),
+      wrapper: wrap(undefined, SOPHIE),
     });
     expect(result.current).toBe('friend');
   });

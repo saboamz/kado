@@ -7,14 +7,19 @@ import {
   PROFILE_STATS,
 } from '../data/social';
 import { useStore, useViewerRole } from '../state/store';
+import { useViewer } from '../auth/SessionContext';
 import { Button, Eyebrow, ScreenShell, Tag, cn } from '../ui';
 
 export function Profile() {
   const { handle } = useParams();
   const { state, dispatch, flash } = useStore();
-  // `/moi` has no handle and is always the viewer's own profile; `/u/:handle`
-  // is someone else's unless the handle happens to be theirs.
-  const role = useViewerRole(handle ?? 'sophie');
+  const viewer = useViewer();
+  // `/moi` has no :handle and always means the viewer's own profile, so it
+  // falls back to their handle rather than to a literal. With a hardcoded
+  // session that literal was right by coincidence; against a real one it meant
+  // anyone but Sophie saw a "Suivre" button on their own profile.
+  const profileHandle = handle ?? viewer?.handle;
+  const role = useViewerRole(profileHandle);
   const owner = role === 'owner';
 
   return (
@@ -98,7 +103,7 @@ export function Profile() {
         {COLLECTIONS.map((c) => {
           // Every collection is a list belonging to this profile. Real slugs
           // arrive with the API in P6.
-          const to = `/u/${handle ?? 'sophie'}/listes/${c.id}`;
+          const to = `/u/${profileHandle ?? 'sophie'}/listes/${c.id}`;
           return (
             /*
               Card and heart are siblings, not nested buttons: a button inside a
