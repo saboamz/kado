@@ -82,7 +82,11 @@ if (!hasBackend) {
         const url = (opts?.body as { url?: string } | undefined)?.url ?? '';
         // A beat of latency, so the loading state is real rather than skipped.
         await new Promise((r) => setTimeout(r, 50));
-        return { data: mockScrape(url), error: null };
+        // Same envelope as the real function: { product, extracted_by }.
+        return {
+          data: { product: mockScrape(url), extracted_by: 'json-ld' },
+          error: null,
+        };
       }
       return {
         data: null,

@@ -106,12 +106,22 @@ jobs:
       - name: Fail on any secrecy failure
         run: '! grep -q "^not ok" /tmp/secrecy.tap'
 
+      # Deduplication quality caps recommendation quality: a product that
+      # fragments across rows splits its co-occurrence signal, and no pair
+      # reaches the support threshold. Measured here, before any recommender
+      # exists, because the symptom is indistinguishable from a model problem.
+      - name: Deduplication corpus
+        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/dedup-corpus.sql | tee /tmp/dedup.tap
+      - name: Fail on any dedup failure
+        run: '! grep -q "^not ok" /tmp/dedup.tap'
+
       # A suite that silently stopped running would otherwise look identical to
       # a suite that passed.
-      - name: Assert both suites actually ran
+      - name: Assert every suite actually ran
         run: |
           test "$(grep -c '^ok ' /tmp/schema.tap)"  -ge 75
           test "$(grep -c '^ok ' /tmp/secrecy.tap)" -ge 36
+          test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
 
   # The single worst mistake available in a Supabase app is shipping the
   # service_role key to the browser: it bypasses RLS entirely.

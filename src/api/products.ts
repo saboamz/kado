@@ -36,13 +36,17 @@ export type ScrapedProduct = {
  * error. Genuine failures — network, function down — still throw.
  */
 export async function scrapeUrl(url: string): Promise<ScrapedProduct> {
-  const { data, error } = await supabase.functions.invoke<ScrapedProduct>(
-    'scrape-product',
-    { body: { url } },
-  );
+  const { data, error } = await supabase.functions.invoke<{
+    product: ScrapedProduct | null;
+    extracted_by?: string;
+  }>('scrape-product', { body: { url } });
+
   if (error) throw error;
-  if (!data) throw new Error('scrape-product returned no data');
-  return data;
+  // A readable page with no product in it is not an error — see above — but
+  // the caller still needs to be told, so it throws and the screen offers the
+  // free-text path. The distinction that matters is that the SERVER answered.
+  if (!data?.product) throw new Error('no product found');
+  return data.product;
 }
 
 /** Normalises a URL enough to reject obvious nonsense before a round trip. */
