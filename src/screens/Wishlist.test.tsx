@@ -178,6 +178,11 @@ describe('the secrecy rule on the list', () => {
  * consecutive macrotasks. A late-arriving answer, including one that should
  * not have been sent, lands inside that window and is therefore visible to the
  * assertions that follow.
+ *
+ * The anchor is belt-and-braces rather than the thing doing the work: with it
+ * removed the sabotage is still caught today, because the two queries happen to
+ * resolve close together. It stays because that is a timing coincidence, and a
+ * secrecy assertion should not depend on one.
  */
 async function settle() {
   // The items, which the skeleton placeholder cannot fake.

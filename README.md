@@ -37,22 +37,24 @@ Some consequences worth knowing before you change anything:
 ### On the client, which is presentation only
 
 ```ts
-// src/state/store.tsx
-export function useReservation(giftId: string, role: Role): Reserver | null {
-  const { state } = useStore();
-  if (role === 'owner') return null;
-  return state.reserved[giftId] ?? null;
-}
+// src/api/reservations.ts
+if (isNotFound(error)) return new Map();
 ```
 
-Screens never read `state.reserved`. An owner is handed `null`, so there is no
-reservation state for a component to accidentally render — no badge, no
-counter, no disabled button hinting at what lies underneath. `useReservedCount`
-and `usePotState` do the same for the aggregates.
+An owner's request is refused, so the map is empty and there is nothing for a
+component to render — no badge, no counter, no disabled button hinting at what
+lies underneath. Note that the refusal becomes an empty result rather than an
+error: an error screen on your own list is itself a signal that the list has
+something to hide.
 
-This half is **cosmetic on its own** and always was. It stops the UI drawing
-the secret; it does not stop the server sending it. That is why the tests come
-in pairs.
+The client-side selectors that used to filter this data are gone. They worked,
+and they were never a guarantee — the secret sat in the store either way, one
+devtools inspection from being read. They were deleted rather than deprecated,
+because a working selector with the right-looking shape is what a future screen
+copies.
+
+This half is **cosmetic on its own**. It stops the UI drawing the secret; it
+does not stop the server sending it. That is why the tests come in pairs.
 
 ## Tests
 
@@ -103,9 +105,10 @@ src/
   ui/           design-system primitives (Button, Card, Chip, ScreenShell…)
   components/   shared app components
   screens/      one file per screen, mounted by the route table
-  state/        UI state, and the selectors that hold the rule
+  state/        UI preferences (theme, layout) and the viewer's role
+  lib/          Supabase client, generated types, money, the mock transport
   styles/       Tailwind entry and design tokens
-  data/         fixtures, on their way out as the API lands
+  data/         static UI copy, and the seed the mock transport serves
 
 supabase/
   migrations/   0001-0008 public schema · 0009-0010 the secret layer
