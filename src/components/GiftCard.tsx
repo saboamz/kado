@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { PlaceholderArt } from './Placeholder';
-import type { Gift, Reserver } from '../data/types';
+import type { Reserver } from '../data/types';
+import type { WishItemView } from '../api/wishlists';
 import { stars } from '../data/fixtures';
+import { formatMoney } from '../lib/money';
 import { cn } from '../ui';
 
 /**
@@ -25,12 +27,12 @@ export function GiftCard({
   reservation,
   to,
 }: {
-  gift: Gift;
+  gift: WishItemView;
   grid: boolean;
   reservation: Reserver | null;
   to: string;
 }) {
-  const flag = gift.pot
+  const flag = gift.is_pot
     ? 'Cagnotte'
     : reservation === 'you'
       ? 'Réservé par vous'
@@ -54,12 +56,12 @@ export function GiftCard({
           grid ? 'aspect-square w-full' : 'h-24 w-24 flex-none',
         )}
       >
-        <PlaceholderArt label={gift.art} hatch={5} className="absolute inset-0" />
+        <PlaceholderArt label={gift.art ?? 'PHOTO PRODUIT'} hatch={5} className="absolute inset-0" />
         {flag && (
           <span
             className={cn(
               'absolute top-2 left-2 rounded-sm px-2 py-1.5 text-[0.625rem] leading-none font-medium backdrop-blur-[10px]',
-              gift.pot
+              gift.is_pot
                 ? 'bg-accent text-on-accent'
                 : // Was a manual `theme.dark ? 'rgba(16,16,19,.8)' : ...` branch
                   // retyping DARK.glass by hand. It is just the glass token.
@@ -73,17 +75,17 @@ export function GiftCard({
 
       <div className={cn('min-w-0 flex-1', grid ? 'px-3.5 pt-3 pb-3.5' : 'px-3.5')}>
         <p className="text-pretty text-[0.84375rem] leading-tight font-semibold text-fg">
-          {gift.name}
+          {gift.title}
         </p>
         <div className="mt-1.5 flex items-center gap-1.5">
           <span className="font-mono text-sm leading-none font-medium text-fg">
-            {gift.price}
+            {formatMoney(gift.price_cents, gift.currency)}
           </span>
           <span
-            aria-label={`Priorité ${gift.prio} sur 3`}
+            aria-label={`Priorité ${gift.priority} sur 3`}
             className="text-xs leading-none tracking-eyebrow text-accent"
           >
-            {stars(gift.prio)}
+            {stars(gift.priority as 1 | 2 | 3)}
           </span>
         </div>
         {reservation && (

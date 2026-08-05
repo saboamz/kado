@@ -16,6 +16,13 @@ import { resetMockData } from '../lib/mockTransport';
  * outright instead of handing the screen data to filter, so what a viewer sees
  * is decided by who they are. Anything downstream of that answer is
  * asynchronous — `findBy`, not `getBy`.
+ *
+ * The gift ITSELF is asynchronous too now: it comes from wishItemsQuery, and
+ * the screen renders an `aria-busy` skeleton block while `gift` is undefined.
+ * So the name, the price, the merchant and the priority are all `findBy` as
+ * well. The rows are the fixture gifts as wish_items, which renames the
+ * fields — `name` is `title`, `desc` is `note`, `prio` is `priority` — and
+ * turns the formatted `price` string into `price_cents` formatted at render.
  */
 const DETAIL_PATH = '/u/:handle/listes/:slug/:itemId';
 const POT_PATH = '/u/:handle/listes/:slug/:itemId/cagnotte';
@@ -43,30 +50,50 @@ const onPotAsOwner = {
 };
 
 describe('the gift', () => {
-  it('shows name, price, category and description', () => {
+  it('waits for the gift rather than rendering an empty one', () => {
     renderScreen(<GiftDetail />, asFriend('g1'));
-    expect(screen.getByRole('heading')).toHaveTextContent('AirPods Pro 3');
-    expect(screen.getByText('279 €')).toBeInTheDocument();
+    // Nothing item-shaped on the first paint: `gifts[0]` is undefined until
+    // the query lands, so the screen shows a busy placeholder instead of a
+    // half-built detail page with blank fields.
+    expect(document.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
+
+  it('shows name, price, category and description', async () => {
+    renderScreen(<GiftDetail />, asFriend('g1'));
+    expect(await screen.findByRole('heading')).toHaveTextContent(
+      'AirPods Pro 3',
+    );
+    // 27900 cents, formatted at render. Intl emits a narrow no-break space
+    // before the €, so this matches by pattern rather than pasting an
+    // invisible character into the assertion.
+    expect(await screen.findByText(/^279\s*€$/)).toBeInTheDocument();
     expect(screen.getByText('Tech')).toBeInTheDocument();
+    // The fixture's `desc` is the row's `note`.
     expect(screen.getByText(/Réduction de bruit active/)).toBeInTheDocument();
   });
 
-  it('credits the merchant', () => {
+  it('credits the merchant', async () => {
     renderScreen(<GiftDetail />, asFriend('g1'));
-    expect(screen.getByText('Apple Store')).toBeInTheDocument();
+    expect(await screen.findByText('Apple Store')).toBeInTheDocument();
     expect(screen.getByText('apple.com/fr/airpods-pro')).toBeInTheDocument();
   });
 
-  it('labels the priority for assistive tech', () => {
+  it('labels the priority for assistive tech', async () => {
     renderScreen(<GiftDetail />, asFriend('g5'));
-    expect(screen.getByLabelText('Priorité 1 sur 3')).toBeInTheDocument();
+    // The fixture's `prio` is the row's `priority`.
+    expect(await screen.findByLabelText('Priorité 1 sur 3')).toBeInTheDocument();
     expect(screen.getByText('Ce serait sympa')).toBeInTheDocument();
   });
 
   it('goes back to the list', async () => {
     const user = userEvent.setup();
     renderScreen(<GiftDetail />, asFriend('g1'));
-    await user.click(screen.getByRole('link', { name: 'Retour à la liste' }));
+    // The back link lives inside the loaded screen, not the skeleton, so it
+    // arrives with the gift.
+    await user.click(
+      await screen.findByRole('link', { name: 'Retour à la liste' }),
+    );
     expect(screen.getByTestId('path')).toHaveTextContent(LIST);
   });
 });
@@ -290,18 +317,29 @@ describe('the cagnotte', () => {
 /**
  * Wait until the screen has stopped changing.
  *
- * Deliberately not "wait for the owner's reassurance card": that card is an
- * owner branch in GiftDetail, so it is present on the very first paint, before
- * any request has resolved. An absence assertion behind such a wait passes even
- * when the server is leaking — the leak just arrives a tick later. Verified by
- * stubbing the transport to answer an owner with a friend's data; the
- * card-based wait still passed, and the pot appeared immediately afterwards.
+ * Two asynchronous things have to have happened before an absence assertion
+ * means anything: the gift must have arrived from wishItemsQuery — until it
+ * does the screen is a skeleton with nothing on it to leak — and the
+ * reservation and pot RPCs must have been issued and refused.
  *
- * Settling on quiescence instead — polling until the rendered text is
- * unchanged across consecutive macrotasks — puts any late answer inside the
- * window, where the assertions can see it.
+ * Deliberately not "wait for the owner's reassurance card": that card is an
+ * owner branch in GiftDetail, so it renders the moment the gift lands, before
+ * the RPCs behind it have resolved. An absence assertion behind such a wait
+ * passes even when the server is leaking — the leak just arrives a tick later.
+ * Verified by stubbing the transport to answer an owner with a friend's data;
+ * the card-based wait still passed, and the pot appeared immediately
+ * afterwards.
+ *
+ * So anchor on the gift being on screen at all — which the skeleton cannot
+ * fake — and then settle on quiescence: poll until the rendered text is
+ * unchanged across consecutive macrotasks. That puts any late answer inside
+ * the window, where the assertions can see it.
  */
 async function settleAsOwner() {
+  // The gift itself. Everything the owner assertions are about hangs off it,
+  // and none of it can be judged absent while the screen is still a skeleton.
+  await screen.findByRole('heading');
+
   let previous = '';
   await waitFor(
     () => {

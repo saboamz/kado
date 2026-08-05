@@ -1,9 +1,12 @@
 import { useLocation, useParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BackButton } from '../components/BackButton';
 import { PlaceholderArt } from '../components/Placeholder';
+import { Skeleton } from '../components/Skeleton';
 import { Pot } from '../components/Pot';
-import { GIFTS, PRIO_LABEL, stars } from '../data/fixtures';
+import { PRIO_LABEL, stars } from '../data/fixtures';
+import { wishItemsQuery } from '../api/wishlists';
+import { formatMoney } from '../lib/money';
 import { useStore, useViewerRole } from '../state/store';
 import { useReservations } from '../api/useReservations';
 import {
@@ -29,17 +32,37 @@ export function GiftDetail() {
   // `/…/:itemId/cagnotte` is the pot view of a gift. It always lands on a
   // collaborative gift, even when the user arrived from a feed entry whose
   // target has no pot of its own.
+  const items = useQuery(wishItemsQuery(LIST_ID));
+  const gifts = items.data ?? [];
+
   const isPotRoute = pathname.endsWith('/cagnotte');
-  const fallback = GIFTS.find((g) => g.pot) ?? GIFTS[0];
-  const selected = GIFTS.find((g) => g.id === itemId) ?? GIFTS[0];
-  const gift = isPotRoute && !selected.pot ? fallback : selected;
+  const fallback = gifts.find((g) => g.is_pot) ?? gifts[0];
+  const selected = gifts.find((g) => g.id === itemId) ?? gifts[0];
+  const gift = isPotRoute && !selected?.is_pot ? fallback : selected;
 
   const reservations = useReservations(LIST_ID);
-  const reservation = reservations.get(gift.id);
+  const reservation = gift ? reservations.get(gift.id) : null;
+
+  // The array is empty until the query lands, so `gifts[0]` is undefined on
+  // the first paint. TypeScript does not catch this — indexing an array is
+  // typed as if it always hits — so the guard is manual and everything below
+  // may assume a gift.
+  if (!gift) {
+    return (
+      <div className="pb-36" aria-busy="true">
+        <Skeleton className="h-80 w-full sm:h-96" />
+        <div className="mx-auto w-full max-w-screen-sm space-y-3 px-5 pt-5.5 sm:px-6">
+          <Skeleton className="h-8 w-3/4 rounded-lg" />
+          <Skeleton className="h-4 w-1/3 rounded-sm" />
+          <Skeleton className="h-20 w-full rounded-lg" />
+        </div>
+      </div>
+    );
+  }
 
   const label = owner
     ? 'Modifier ce cadeau'
-    : gift.pot
+    : gift.is_pot
       ? `Participer avec ${state.contrib} €`
       : reservation === 'you'
         ? 'Annuler ma réservation'
@@ -47,12 +70,12 @@ export function GiftDetail() {
           ? 'Déjà réservé par un proche'
           : 'Réserver ce cadeau';
 
-  const taken = !!reservation && reservation !== 'you' && !gift.pot;
+  const taken = !!reservation && reservation !== 'you' && !gift.is_pot;
 
   async function act() {
     if (owner)
       return flash('Édition — le propriétaire ne voit aucune réservation');
-    if (gift.pot) {
+    if (gift.is_pot) {
       await contributeToPot(gift.id, state.contrib * 100);
       await invalidatePot(queryClient, gift.id);
       return flash(
@@ -75,7 +98,7 @@ export function GiftDetail() {
       <div className="pb-36 motion-safe:animate-[kFadeUp_.35s_both]">
         <div className="relative h-80 sm:h-96">
           <PlaceholderArt
-            label={gift.art}
+            label={gift.art ?? 'PHOTO PRODUIT'}
             hatch={6}
             className="absolute inset-0"
           />
@@ -88,35 +111,35 @@ export function GiftDetail() {
         <div className="mx-auto w-full max-w-screen-sm px-5 pt-5.5 sm:px-6">
           <div className="flex items-start gap-3.5">
             <h2 className="flex-1 text-pretty text-3xl leading-tight font-bold tracking-tighter text-fg">
-              {gift.name}
+              {gift.title}
             </h2>
             <span className="font-mono text-xl leading-snug font-semibold whitespace-nowrap text-fg">
-              {gift.price}
+              {formatMoney(gift.price_cents, gift.currency)}
             </span>
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2.5">
             <span
-              aria-label={`Priorité ${gift.prio} sur 3`}
+              aria-label={`Priorité ${gift.priority} sur 3`}
               className="text-[0.8125rem] leading-none tracking-[.12em] text-accent"
             >
-              {stars(gift.prio)}
+              {stars(gift.priority as 1 | 2 | 3)}
             </span>
             <span className="text-xs leading-none text-fg2">
-              {PRIO_LABEL[gift.prio]}
+              {PRIO_LABEL[gift.priority as 1 | 2 | 3]}
             </span>
             <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-fg3" />
             <Tag tone="neutral" size="sm">
-              {gift.cat}
+              {gift.cat ?? 'Cadeau'}
             </Tag>
           </div>
 
           <p className="mt-4.5 text-pretty leading-relaxed text-fg2">
-            {gift.desc}
+            {gift.note}
           </p>
 
           <a
-            href={`https://${gift.url}`}
+            href={`https://${gift.url ?? ''}`}
             target="_blank"
             rel="noreferrer noopener"
             className="mt-5 flex items-center gap-3 rounded-xl bg-surface p-3.5 transition-colors hover:bg-chip focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
@@ -129,10 +152,10 @@ export function GiftDetail() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[0.8125rem] leading-snug font-semibold text-fg">
-                {gift.merchant}
+                {gift.merchant ?? 'Lien'}
               </span>
               <span className="mt-0.5 block truncate text-xs leading-tight text-fg3">
-                {gift.url}
+                {gift.url ?? ''}
               </span>
             </span>
           </a>
@@ -140,7 +163,7 @@ export function GiftDetail() {
           {/*
             No `!owner &&` guard: Pot renders nothing when the server declines
             to describe the pot, which it always does for an owner. The
-            condition that used to live here — `!!gift.pot && !owner` — was a
+            condition that used to live here — `!!gift.is_pot && !owner` — was a
             guard someone could forget or invert.
           */}
           <Pot itemId={gift.id} />

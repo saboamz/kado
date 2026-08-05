@@ -1,13 +1,22 @@
 import { useParams } from 'react-router-dom';
 import { GiftCard } from '../components/GiftCard';
 import { PlaceholderArt } from '../components/Placeholder';
-import { GIFTS } from '../data/fixtures';
+import { useQuery } from '@tanstack/react-query';
 import { useStore, useViewerRole } from '../state/store';
 import { useReservations } from '../api/useReservations';
+import { wishItemsQuery } from '../api/wishlists';
 import { BackButton } from '../components/BackButton';
+import { Skeleton } from '../components/Skeleton';
 import { Eyebrow, ScreenShell, cn } from '../ui';
 
-/** The seeded fixture list. Replaced by the wishlist query in P6d. */
+/**
+ * The seeded fixture list.
+ *
+ * Resolving `:slug` to a list id needs the wishlist query, which needs the
+ * embed the mock transport does not model yet. Until then the screen addresses
+ * the one seeded list directly — the id is the same one supabase/seed.sql uses,
+ * so it means the same thing against a real backend.
+ */
 const LIST_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 
 export function Wishlist() {
@@ -15,9 +24,10 @@ export function Wishlist() {
   const { state, dispatch } = useStore();
   const role = useViewerRole(handle);
   const owner = role === 'owner';
-  // Real ids arrive with the wishlist query in P6d; the fixture list has one.
+  const items = useQuery(wishItemsQuery(LIST_ID));
   const reservations = useReservations(LIST_ID);
   const grid = state.layout === 'grid';
+  const gifts = items.data ?? [];
 
   return (
     <ScreenShell flushTop className="px-0 sm:px-0">
@@ -45,7 +55,7 @@ export function Wishlist() {
             empty and the number is 0. The absence of a guard is the point —
             a guard is something a future edit can invert.
           */}
-          {GIFTS.length} envies
+          {gifts.length} envies
           {reservations.count > 0 && ` · ${reservations.count} réservées`}
         </span>
         <div className="flex-1" />
@@ -66,15 +76,27 @@ export function Wishlist() {
             : 'flex flex-col gap-2.5',
         )}
       >
-        {GIFTS.map((g) => (
-          <GiftCard
-            key={g.id}
-            gift={g}
-            grid={grid}
-            reservation={reservations.get(g.id)}
-            to={`/u/${handle}/listes/${slug}/${g.id}${g.pot ? '/cagnotte' : ''}`}
-          />
-        ))}
+        {items.isLoading
+          ? // Cards, not a spinner: the list's shape is known before its
+            // contents are, so reserving the space stops the page jumping when
+            // the answer lands.
+            Array.from({ length: 4 }, (_, i) => (
+              <Skeleton
+                key={i}
+                className={cn('rounded-3xl', grid ? 'aspect-[3/4]' : 'h-24')}
+              />
+            ))
+          : gifts.map((g) => (
+              <GiftCard
+                key={g.id}
+                gift={g}
+                grid={grid}
+                reservation={reservations.get(g.id)}
+                to={`/u/${handle}/listes/${slug}/${g.id}${
+                  g.is_pot ? '/cagnotte' : ''
+                }`}
+              />
+            ))}
       </div>
     </ScreenShell>
   );
