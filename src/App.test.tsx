@@ -130,11 +130,7 @@ it('never leaks a reservation to the owner', async () => {
 
   // The same list, seen by Sophie herself: every trace is gone.
   renderAt(LIST, SOPHIE);
-  // Settle on the count line, which drops its " · N réservées" suffix only
-  // once an (empty) reservation map has actually come back.
-  await waitFor(() =>
-    expect(screen.getByText('6 envies')).toBeInTheDocument(),
-  );
+  await settle();
   expect(screen.queryByText('Réservé par vous')).not.toBeInTheDocument();
   expect(screen.queryByText('Déjà réservé')).not.toBeInTheDocument();
   expect(screen.queryByText(/réservées/)).not.toBeInTheDocument();
@@ -144,8 +140,9 @@ it('never leaks a reservation to the owner', async () => {
 
   // Not on the gift's own screen either.
   await user.click(screen.getByText('AirPods Pro 3'));
+  await settle();
   expect(
-    await screen.findByText(/aucune information de réservation n'existe/),
+    screen.getByText(/aucune information de réservation n'existe/),
   ).toBeInTheDocument();
   expect(
     screen.getByRole('button', { name: 'Modifier ce cadeau' }),
@@ -170,10 +167,35 @@ it('hides the cagnotte from the owner', async () => {
 
   // The owner gets no pot section at all — not an empty one.
   renderAt(`${LIST}/g3/cagnotte`, SOPHIE);
-  // Settle on the owner's reassurance card before asserting the pot's absence.
-  await screen.findByText(/aucune information de réservation n'existe/);
+  await settle();
   expect(
     screen.queryByRole('region', { name: 'Cagnotte' }),
   ).not.toBeInTheDocument();
   expect(screen.queryByText(/récoltés/)).not.toBeInTheDocument();
 });
+
+/**
+ * Wait until the screen has stopped changing.
+ *
+ * The absence assertions above are the whole point of these tests, so the wait
+ * in front of them has to be one a leak cannot slip past. Waiting for a
+ * specific element does not qualify: every element an owner's screen renders is
+ * there on the first paint, before any request has resolved, so a leaking
+ * answer arrives a tick AFTER the wait succeeds and the assertion still passes.
+ * Confirmed by stubbing the transport to answer an owner with a friend's data.
+ *
+ * Polling for quiescence — the rendered text unchanged across consecutive
+ * macrotasks — puts that late answer inside the window instead.
+ */
+async function settle() {
+  let previous = '';
+  await waitFor(
+    () => {
+      const current = document.body.textContent ?? '';
+      const stable = current === previous;
+      previous = current;
+      expect(stable).toBe(true);
+    },
+    { interval: 10 },
+  );
+}

@@ -233,26 +233,21 @@ describe('the cagnotte', () => {
     await user.click(
       screen.getByRole('button', { name: 'Participer avec 100 €' }),
     );
-    // The anonymity promise is the half of this flow that is actually wired
-    // up. The total is not — see the skipped test below.
+    // Anonymity is the promise the contribution flow makes; the running total
+    // it produces is asserted separately below.
     expect(screen.getByTestId('toast')).toHaveTextContent(
       'votre participation est anonyme',
     );
   });
 
   /**
-   * The running total should move when someone contributes. It does not.
+   * The running total moves, and it moves because the SERVER says so.
    *
-   * GiftDetail.act() still dispatches `{ type: 'contribute' }` into the store,
-   * updating `state.pot` — a field Pot no longer reads, because it now renders
-   * `pot.raised_cents` from get_pot_state. Nothing calls the `contribute` RPC
-   * that src/lib/mockTransport.ts already implements; there is no
-   * contributeToPot() in src/api/ at all. So the toast announces a
-   * contribution that never reached the server and the total stays at 650 €.
-   *
-   * Kept rather than deleted because the behaviour it describes is the
-   * intended one: unskip it when the contribution path is migrated the way
-   * reservations were.
+   * Worth asserting separately from the toast: the toast is written from
+   * `state.contrib` and would keep claiming a contribution even if none
+   * reached the server. This reads the total back out of get_pot_state, so it
+   * only passes if the contribute RPC actually ran and the pot query was
+   * invalidated behind it.
    */
   it('adds the contribution to the running total', async () => {
     const user = userEvent.setup();
@@ -266,7 +261,9 @@ describe('the cagnotte', () => {
 
   it('never overshoots the target', async () => {
     const user = userEvent.setup();
-    // One contribution short of the target, so a 200 € top-up would overshoot.
+    // 1 550 € of a 1 599 € target, so a 200 € top-up would overshoot by 151 €.
+    // The clamp lives server-side (`Math.min(POT_TOTAL * 100, …)`), which is
+    // why this asserts the rendered total rather than any local arithmetic.
     resetMockData({ potRaisedCents: 155000 });
     renderScreen(<GiftDetail />, onPot);
     await user.click(await screen.findByRole('button', { name: /^200\s€$/ }));
@@ -291,19 +288,28 @@ describe('the cagnotte', () => {
 });
 
 /**
- * Wait until an owner's reservation and pot queries have resolved.
+ * Wait until the screen has stopped changing.
  *
- * The reassurance card is the tell: it renders the owner wording only once the
- * component has settled. Pairing that with a flushed microtask queue means the
- * absence assertions that follow are made against a settled screen rather than
- * a first paint — so they would genuinely fail if the server ever started
- * answering an owner.
+ * Deliberately not "wait for the owner's reassurance card": that card is an
+ * owner branch in GiftDetail, so it is present on the very first paint, before
+ * any request has resolved. An absence assertion behind such a wait passes even
+ * when the server is leaking — the leak just arrives a tick later. Verified by
+ * stubbing the transport to answer an owner with a friend's data; the
+ * card-based wait still passed, and the pot appeared immediately afterwards.
+ *
+ * Settling on quiescence instead — polling until the rendered text is
+ * unchanged across consecutive macrotasks — puts any late answer inside the
+ * window, where the assertions can see it.
  */
 async function settleAsOwner() {
-  await waitFor(() =>
-    expect(
-      screen.getByText(/aucune information de réservation n'existe/),
-    ).toBeInTheDocument(),
+  let previous = '';
+  await waitFor(
+    () => {
+      const current = document.body.textContent ?? '';
+      const stable = current === previous;
+      previous = current;
+      expect(stable).toBe(true);
+    },
+    { interval: 10 },
   );
-  await waitFor(() => new Promise((resolve) => setTimeout(resolve, 0)));
 }
