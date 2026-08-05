@@ -1,16 +1,22 @@
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { PlaceholderArt } from '../components/Placeholder';
-import { BIRTHDAYS, FEED } from '../data/social';
+import { Skeleton } from '../components/Skeleton';
+import { birthdaysQuery, type Birthday } from '../api/social';
+// The activity feed is the one thing on this screen with no server behind it:
+// there is no feed table yet, and inventing a query for one would mean
+// inventing the rows it returns. It stays on fixtures until that table lands.
+import { FEED } from '../data/social';
 import { Card, Eyebrow, ScreenShell, Tag, cn } from '../ui';
 
 /**
  * Where a feed entry points.
  *
  * The fixtures still carry `to: ScreenId` from the gallery era, when 'list' and
- * 'pot' named mock screens rather than resources. Until P6 hands us real ids,
- * every list link resolves to the same placeholder wishlist and every gift link
- * to the same placeholder gift — the shape of the URL is what matters here, not
- * the target.
+ * 'pot' named mock screens rather than resources. Until the feed has a table of
+ * its own, every list link resolves to the same placeholder wishlist and every
+ * gift link to the same placeholder gift — the shape of the URL is what matters
+ * here, not the target.
  */
 const PLACEHOLDER_LIST = '/u/sophie/listes/anniversaire';
 const PLACEHOLDER_GIFT = `${PLACEHOLDER_LIST}/g1`;
@@ -26,7 +32,63 @@ function feedHref(to: string): string {
   }
 }
 
+/**
+ * Days until the next occurrence of a birthday.
+ *
+ * The fixture carried "dans 12 j" as prose; the table carries a date, so the
+ * copy is computed. Anniversaries recur, so the year is replaced with this
+ * one and rolled forward if it has already passed.
+ */
+function daysUntil(birthday: string, today = new Date()): number {
+  const [, month, day] = birthday.split('-').map(Number);
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let next = new Date(today.getFullYear(), month - 1, day);
+  if (next < start) next = new Date(today.getFullYear() + 1, month - 1, day);
+  return Math.round((next.getTime() - start.getTime()) / 86_400_000);
+}
+
+/** Same register as the fixture copy it replaces: "dans 12 j", "dans 2 mois". */
+function birthdayCopy(days: number): string {
+  if (days === 0) return "aujourd'hui";
+  if (days === 1) return 'demain';
+  if (days < 31) return `dans ${days} j`;
+  const months = Math.round(days / 30);
+  return months <= 1 ? 'dans 1 mois' : `dans ${months} mois`;
+}
+
+/** Within a fortnight is worth highlighting; beyond that it is just a date. */
+const HOT_WITHIN_DAYS = 14;
+
+function BirthdayCard({ person }: { person: Birthday }) {
+  const days = person.birthday ? daysUntil(person.birthday) : null;
+  return (
+    <Link
+      to={`/u/${person.handle}`}
+      className={cn(
+        'w-28 flex-none rounded-2xl bg-surface p-3 text-left',
+        'transition-colors hover:bg-chip',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+      )}
+    >
+      <PlaceholderArt className="mb-2.5 aspect-square w-full rounded-lg" />
+      <div className="text-sm leading-tight font-semibold text-fg">
+        {person.display_name}
+      </div>
+      <div
+        className={cn(
+          'mt-1 font-mono text-xs leading-tight',
+          days !== null && days <= HOT_WITHIN_DAYS ? 'text-accent' : 'text-fg3',
+        )}
+      >
+        {days === null ? '' : birthdayCopy(days)}
+      </div>
+    </Link>
+  );
+}
+
 export function Home() {
+  const birthdays = useQuery(birthdaysQuery());
+
   return (
     <ScreenShell>
       <div className="mb-5 flex items-center justify-between">
@@ -43,30 +105,14 @@ export function Home() {
         // first card sits inset and the affordance is lost.
         className="-mx-5 mb-6 flex gap-2.5 overflow-x-auto px-5 pb-1 sm:-mx-6 sm:px-6"
       >
-        {BIRTHDAYS.map((b) => (
-          <Link
-            key={b.name}
-            to="/u/sophie"
-            className={cn(
-              'w-28 flex-none rounded-2xl bg-surface p-3 text-left',
-              'transition-colors hover:bg-chip',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
-            )}
-          >
-            <PlaceholderArt className="mb-2.5 aspect-square w-full rounded-lg" />
-            <div className="text-sm leading-tight font-semibold text-fg">
-              {b.name}
-            </div>
-            <div
-              className={cn(
-                'mt-1 font-mono text-xs leading-tight',
-                b.hot ? 'text-accent' : 'text-fg3',
-              )}
-            >
-              {b.when}
-            </div>
-          </Link>
-        ))}
+        {birthdays.isPending
+          ? // Four cards is what the strip usually holds, so the placeholder
+            // reserves the height the real content will take and the page does
+            // not jump when it arrives.
+            Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-38.5 w-28 flex-none rounded-2xl" />
+            ))
+          : birthdays.data?.map((b) => <BirthdayCard key={b.id} person={b} />)}
       </section>
 
       <Eyebrow className="mb-3 ml-0.5">Activité</Eyebrow>

@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PlaceholderArt } from '../components/Placeholder';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { Skeleton } from '../components/Skeleton';
-import { ADD_LISTS, ADD_METHODS, ANALYZE_MS, SCRAPED } from '../data/add';
+import { ADD_LISTS, ADD_METHODS } from '../data/add';
+import {
+  looksLikeUrl,
+  scrapeUrl,
+  type ScrapedProduct,
+} from '../api/products';
 import { stars } from '../data/fixtures';
 import { useStore } from '../state/store';
 import { Button, Card, Chip, Eyebrow, ScreenShell } from '../ui';
@@ -23,6 +29,16 @@ import { Button, Card, Chip, Eyebrow, ScreenShell } from '../ui';
  * nothing outside this screen ever read it. It is local useState until React
  * Hook Form lands with the real mutation in P6.
  */
+/** Cents to a French price string. Never render raw cents to a user. */
+function formatPrice(p: ScrapedProduct | null): string {
+  if (!p || p.price_cents == null) return '';
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: p.currency || 'EUR',
+    maximumFractionDigits: p.price_cents % 100 === 0 ? 0 : 2,
+  }).format(p.price_cents / 100);
+}
+
 export function AddWish() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -31,23 +47,49 @@ export function AddWish() {
   const [link, setLink] = useState('');
   const [list, setList] = useState(ADD_LISTS[0]);
   const [prio, setPrio] = useState<1 | 2 | 3>(3);
-  const [loading, setLoading] = useState(false);
+  const [scraped, setScraped] = useState<ScrapedProduct | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // The analysis is a fake network call; make sure it can't fire after the
-  // screen goes away, which would set state on an unmounted tree.
-  useEffect(() => () => clearTimeout(timer.current), []);
+  // The scrape can outlive the screen — someone pastes a link and hits back —
+  // and resolving onto an unmounted tree would warn and set state nowhere.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const onDetails = pathname.endsWith('/details');
 
-  function analyze() {
-    clearTimeout(timer.current);
-    setLoading(true);
-    timer.current = setTimeout(() => {
-      setLoading(false);
+  const analysis = useMutation({
+    mutationFn: (url: string) => scrapeUrl(url),
+    onSuccess: (data) => {
+      if (!alive.current) return;
+      setScraped(data);
+      setError(null);
       navigate('/ajouter/details');
-    }, ANALYZE_MS);
+    },
+    onError: () => {
+      if (!alive.current) return;
+      // A link that cannot be read is an ordinary outcome — paywalls,
+      // JS-only pages, a typo — so it offers the free-text path rather than
+      // presenting itself as a failure of the app.
+      setError(
+        "Ce lien n'a pas pu être lu. Vous pouvez décrire l'envie vous-même.",
+      );
+    },
+  });
+
+  const loading = analysis.isPending;
+
+  function analyze() {
+    if (!looksLikeUrl(link)) {
+      setError('Cette adresse ne ressemble pas à un lien.');
+      return;
+    }
+    setError(null);
+    analysis.mutate(link);
   }
 
   return (
@@ -94,6 +136,15 @@ export function AddWish() {
           >
             {loading ? 'Analyse du lien…' : 'Récupérer les informations'}
           </Button>
+
+          {error && (
+            // role="alert" so the failure is announced: it is the only
+            // feedback, and a sighted user sees it appear while a screen
+            // reader user would otherwise just wait.
+            <p role="alert" className="mt-3 text-pretty text-sm text-accent">
+              {error}
+            </p>
+          )}
         </>
       )}
 
@@ -129,13 +180,13 @@ export function AddWish() {
             />
             <div className="min-w-0 flex-1">
               <p className="text-base leading-snug font-semibold text-fg">
-                {SCRAPED.name}
+                {scraped?.title ?? '—'}
               </p>
               <p className="mt-1.5 font-mono text-[0.8125rem] leading-none font-medium text-fg">
-                {SCRAPED.price}
+                {formatPrice(scraped)}
               </p>
               <p className="mt-1.5 text-xs leading-none text-fg3">
-                {SCRAPED.source}
+                {scraped?.source ?? ''}
               </p>
             </div>
           </Card>
@@ -176,7 +227,7 @@ export function AddWish() {
               <Eyebrow className="mb-2">Description</Eyebrow>
               <Card radius="lg" className="min-h-16.5 px-3.5 py-3.5">
                 <p className="text-[0.84375rem] leading-relaxed text-fg2">
-                  {SCRAPED.desc}
+                  {scraped?.description ?? ''}
                 </p>
               </Card>
             </div>
@@ -187,7 +238,7 @@ export function AddWish() {
             size="lg"
             className="mt-4.5"
             onClick={() => {
-              flash(`${SCRAPED.name} ajoutés à ${list}`);
+              flash(`${scraped?.title ?? '—'} ajoutés à ${list}`);
               navigate('/u/sophie/listes/anniversaire');
             }}
           >

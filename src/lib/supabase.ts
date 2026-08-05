@@ -69,6 +69,110 @@ if (!hasBackend) {
       return { data: null, error: { code: err.code, message: err.message } };
     }
   };
+
+  // Edge functions too, for the same reason.
+  //
+  // `functions` is a GETTER that builds a fresh FunctionsClient on every
+  // access, so assigning to `client.functions.invoke` writes to an object that
+  // is thrown away immediately. The getter itself has to be replaced.
+  const mockFunctions = {
+    invoke: async (name: string, opts?: { body?: unknown }) => {
+      const { mockScrape } = await import('./mockTransport');
+      if (name === 'scrape-product') {
+        const url = (opts?.body as { url?: string } | undefined)?.url ?? '';
+        // A beat of latency, so the loading state is real rather than skipped.
+        await new Promise((r) => setTimeout(r, 50));
+        return { data: mockScrape(url), error: null };
+      }
+      return {
+        data: null,
+        error: new Error(`mockTransport has no stub for function "${name}"`),
+      };
+    },
+  };
+  Object.defineProperty(client, 'functions', {
+    get: () => mockFunctions,
+    configurable: true,
+  });
+
+  // `.from()` needs the same treatment: left alone it waits out a network
+  // timeout against a URL that does not exist, which reads as "the app is
+  // slow" rather than "there is no backend".
+  //
+  // This models only the slice of PostgREST's builder the queries use. It is
+  // chainable and thenable, so `await supabase.from(t).select(...).eq(...)`
+  // resolves like the real thing.
+  // @ts-expect-error — same narrowing as above.
+  client.from = (table: string) => {
+    const filters: { op: string; column: string; value: unknown }[] = [];
+    let limitTo = Infinity;
+    let single = false;
+
+    const run = async () => {
+      const { mockSelect } = await import('./mockTransport');
+      try {
+        const rows = mockSelect(table, filters).slice(0, limitTo);
+        return single
+          ? { data: rows[0] ?? null, error: null }
+          : { data: rows, error: null };
+      } catch (e) {
+        const err = e as Error & { code?: string };
+        return { data: null, error: { code: err.code, message: err.message } };
+      }
+    };
+
+    const builder: Record<string, unknown> = {
+      select: () => builder,
+      order: () => builder,
+      /**
+       * PostgREST's `or` takes a filter string: `col.ilike.%x%,other.ilike.%x%`.
+       *
+       * This was a no-op, which meant every search returned every row — search
+       * appeared to work while filtering nothing, and the screen's empty state
+       * was unreachable. Parsing the few operators the app uses is cheap and
+       * makes the fixture path behave like the real one.
+       */
+      or: (expr: string) => {
+        const clauses = expr.split(',').map((clause) => {
+          const [column, op, ...rest] = clause.split('.');
+          return { op, column, value: rest.join('.') };
+        });
+        filters.push({ op: 'or', column: '', value: clauses });
+        return builder;
+      },
+      eq: (column: string, value: unknown) => {
+        filters.push({ op: 'eq', column, value });
+        return builder;
+      },
+      is: (column: string, value: unknown) => {
+        filters.push({ op: 'is', column, value });
+        return builder;
+      },
+      not: (column: string, _op: string, value: unknown) => {
+        filters.push({ op: 'not.is', column, value });
+        return builder;
+      },
+      ilike: (column: string, value: unknown) => {
+        filters.push({ op: 'ilike', column, value });
+        return builder;
+      },
+      limit: (n: number) => {
+        limitTo = n;
+        return builder;
+      },
+      maybeSingle: () => {
+        single = true;
+        return run();
+      },
+      single: () => {
+        single = true;
+        return run();
+      },
+      then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+        run().then(resolve, reject),
+    };
+    return builder;
+  };
 }
 
 export const supabase = client;

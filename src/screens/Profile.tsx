@@ -1,14 +1,14 @@
 import { Link, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { PlaceholderArt } from '../components/Placeholder';
-import {
-  COLLECTIONS,
-  INTERESTS,
-  PROFILE_BIO,
-  PROFILE_STATS,
-} from '../data/social';
+import { Skeleton } from '../components/Skeleton';
+import { profileQuery, wishlistsOfUserQuery } from '../api/wishlists';
 import { useStore, useViewerRole } from '../state/store';
 import { useViewer } from '../auth/SessionContext';
 import { Button, Eyebrow, ScreenShell, Tag, cn } from '../ui';
+
+/** First name, for the second-person copy: "Sophie (vous)", "Vous suivez Sophie". */
+const firstName = (displayName: string) => displayName.split(' ')[0];
 
 export function Profile() {
   const { handle } = useParams();
@@ -22,6 +22,27 @@ export function Profile() {
   const role = useViewerRole(profileHandle);
   const owner = role === 'owner';
 
+  const profile = useQuery(profileQuery(profileHandle));
+  /*
+    Keyed by the profile's id, not its handle.
+
+    wishlistsOfUserQuery takes a parameter named `handle` and filters
+    `.eq('owner_id', ...)` with it — owner_id is a uuid, so passing an actual
+    handle matches nothing and the grid comes back empty. Passing the id we
+    just fetched is correct against both the mock and a real PostgREST; the
+    misleading parameter name is reported rather than renamed, since
+    src/api/wishlists.ts is outside this change.
+  */
+  const collections = useQuery(wishlistsOfUserQuery(profile.data?.id));
+
+  // Whose profile this is, in the third person, until the fetch settles.
+  const displayName = profile.data?.display_name;
+  const heading = displayName
+    ? owner
+      ? `${firstName(displayName)} (vous)`
+      : displayName
+    : null;
+
   return (
     <ScreenShell className="px-0 sm:px-0">
       <div className="px-5 sm:px-6">
@@ -32,29 +53,47 @@ export function Profile() {
             round
             className="h-22 w-22 flex-none bg-surface"
           />
+          {/*
+            The fixture showed 6 listes / 41 envies / 12 reçus. Only the first
+            is countable from anything we fetch — it is the length of the
+            collections below. "Envies" would need an aggregate over items in
+            every list, and "Reçus" has no table at all behind it, so both are
+            dropped rather than shown as a plausible-looking invention.
+          */}
           <dl className="flex flex-1 justify-around">
-            {PROFILE_STATS.map((s) => (
-              <div key={s.label} className="text-center">
-                <dd className="text-xl leading-none font-bold text-fg">
-                  {s.value}
-                </dd>
-                <dt className="mt-1.5 text-xs leading-none text-fg2">
-                  {s.label}
-                </dt>
-              </div>
-            ))}
+            <div className="text-center">
+              <dd className="text-xl leading-none font-bold text-fg">
+                {collections.isPending ? (
+                  <Skeleton className="mx-auto h-5 w-6 rounded-sm" />
+                ) : (
+                  collections.data?.length ?? 0
+                )}
+              </dd>
+              <dt className="mt-1.5 text-xs leading-none text-fg2">
+                {collections.data?.length === 1 ? 'Liste' : 'Listes'}
+              </dt>
+            </div>
           </dl>
         </div>
 
         <h2 className="text-xl leading-snug font-bold tracking-tight text-fg">
-          {owner ? 'Sophie (vous)' : 'Sophie Marchand'}
+          {heading ?? <Skeleton className="h-6 w-44 rounded-sm" />}
         </h2>
-        <p className="mt-1.5 text-pretty text-[0.84375rem] leading-relaxed text-fg2">
-          {PROFILE_BIO}
-        </p>
+        {profile.isPending ? (
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            <Skeleton className="h-3.5 w-full rounded-sm" />
+            <Skeleton className="h-3.5 w-2/3 rounded-sm" />
+          </div>
+        ) : (
+          profile.data?.bio && (
+            <p className="mt-1.5 text-pretty text-[0.84375rem] leading-relaxed text-fg2">
+              {profile.data.bio}
+            </p>
+          )
+        )}
 
         <ul className="mt-3 flex list-none flex-wrap gap-1.5 p-0">
-          {INTERESTS.map((label) => (
+          {profile.data?.interests?.map((label) => (
             <li key={label}>
               <Tag tone="neutral">{label}</Tag>
             </li>
@@ -65,7 +104,11 @@ export function Profile() {
           <Button
             block
             onClick={() =>
-              flash(owner ? 'Édition du profil' : 'Vous suivez Sophie')
+              flash(
+                owner
+                  ? 'Édition du profil'
+                  : `Vous suivez ${displayName ? firstName(displayName) : 'ce profil'}`,
+              )
             }
           >
             {owner ? 'Modifier mon profil' : 'Suivre'}
@@ -100,10 +143,17 @@ export function Profile() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 px-5 sm:px-6 md:grid-cols-3 lg:grid-cols-4">
-        {COLLECTIONS.map((c) => {
-          // Every collection is a list belonging to this profile. Real slugs
-          // arrive with the API in P6.
-          const to = `/u/${profileHandle ?? 'sophie'}/listes/${c.id}`;
+        {collections.isPending &&
+          Array.from({ length: 6 }, (_, i) => (
+            <div key={i}>
+              <Skeleton className="aspect-[1.05] w-full rounded-xl" />
+              <Skeleton className="mt-2.5 ml-1 h-3.5 w-2/3 rounded-sm" />
+            </div>
+          ))}
+        {collections.data?.map((c) => {
+          // Every collection is a list belonging to this profile, addressed by
+          // its own slug now rather than by a fixture id.
+          const to = `/u/${profileHandle ?? 'sophie'}/listes/${c.slug ?? c.id}`;
           return (
             /*
               Card and heart are siblings, not nested buttons: a button inside a
@@ -115,7 +165,7 @@ export function Profile() {
               <div className="relative">
                 <Link
                   to={to}
-                  aria-label={`Ouvrir la collection ${c.name}`}
+                  aria-label={`Ouvrir la collection ${c.title}`}
                   className="block w-full rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 >
                   <PlaceholderArt
@@ -125,7 +175,7 @@ export function Profile() {
                   />
                 </Link>
                 <button
-                  aria-label={`Aimer ${c.name}`}
+                  aria-label={`Aimer ${c.title}`}
                   aria-pressed={!!state.liked[c.id]}
                   onClick={() => dispatch({ type: 'toggleLike', id: c.id })}
                   className={cn(
@@ -144,11 +194,21 @@ export function Profile() {
                 className="block w-full rounded-sm px-1 pt-2.5 pb-0.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 <span className="block text-[0.84375rem] leading-snug font-semibold text-fg">
-                  {c.name}
+                  {c.title}
                 </span>
-                <span className="mt-1 block font-mono text-xs leading-none text-fg3">
-                  {c.count}
-                </span>
+                {/*
+                  The fixture captioned each cover with "8 envies". That count
+                  is an aggregate over wish_items which this query does not
+                  select and cannot cheaply add, and a wrong count under a
+                  cover is worse than none — so the caption carries the
+                  occasion, which the row actually has, and nothing when it
+                  has none.
+                */}
+                {c.occasion && (
+                  <span className="mt-1 block font-mono text-xs leading-none text-fg3">
+                    {c.occasion}
+                  </span>
+                )}
               </Link>
             </div>
           );

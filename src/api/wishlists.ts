@@ -4,6 +4,21 @@ import { qk } from './queryKeys';
 import type { WishItem } from '../lib/database.types';
 
 /**
+ * A wish item plus the presentation fields the catalogue will own.
+ *
+ * `art`, `cat`, `merchant` and `url` come from a product in P7. Until then the
+ * transport carries them on the row so the screens keep their hatch
+ * placeholders and merchant card; typing them optional here means the screens
+ * are already written against their eventual absence.
+ */
+export type WishItemView = WishItem & {
+  art?: string;
+  cat?: string;
+  merchant?: string;
+  url?: string;
+};
+
+/**
  * Wishlists and the wishes inside them.
  *
  * Everything here reads `public` tables under RLS. Note what these rows do NOT
@@ -57,19 +72,57 @@ export const wishlistQuery = (
     },
   });
 
-export const wishlistsOfUserQuery = (handle: string | undefined) =>
+/**
+ * Every list a person owns.
+ *
+ * Takes an OWNER ID, not a handle. The parameter was called `handle` while the
+ * filter compared it against `owner_id`, which is a uuid — so every call with a
+ * real handle matched zero rows and returned an empty list rather than an
+ * error. Renamed so the type of thing it wants is visible at the call site.
+ */
+export const wishlistsOfUserQuery = (ownerId: string | undefined) =>
   queryOptions({
-    queryKey: qk.wishlists.ofUser(handle ?? ''),
-    enabled: Boolean(handle),
+    queryKey: qk.wishlists.ofUser(ownerId ?? ''),
+    enabled: Boolean(ownerId),
     queryFn: async () => {
       const { data, error } = await supabase
         .from('wishlists')
         .select('id, title, slug, occasion, event_date, cover_url, owner_id')
-        .eq('owner_id', handle!)
+        .eq('owner_id', ownerId!)
         .is('archived_at', null)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data ?? [];
+    },
+  });
+
+/**
+ * The wishes in a list.
+ *
+ * Fetched separately from the list itself rather than as a PostgREST embed:
+ * the two have different cache lifetimes — items change while you browse, the
+ * list's title does not — and separating them means adding a wish invalidates
+ * one small query instead of refetching the whole page.
+ *
+ * These rows carry NO reservation state. That is not an omission in the
+ * select; there is no such column on wish_items, because a reservation writing
+ * to the owner's own row would be a Realtime timing oracle. Reservation state
+ * comes from the RPC in ./reservations.ts, separately and only for those
+ * allowed to see it.
+ */
+export const wishItemsQuery = (wishlistId: string | undefined) =>
+  queryOptions({
+    queryKey: [...qk.wishlists.all, wishlistId, 'items'] as const,
+    enabled: Boolean(wishlistId),
+    queryFn: async (): Promise<WishItemView[]> => {
+      const { data, error } = await supabase
+        .from('wish_items')
+        .select('*')
+        .eq('wishlist_id', wishlistId!)
+        .eq('status', 'active')
+        .order('position');
+      if (error) throw error;
+      return (data ?? []) as WishItemView[];
     },
   });
 
