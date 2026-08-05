@@ -114,6 +114,13 @@ jobs:
       - name: Fail on any event failure
         run: '! grep -q "^not ok" /tmp/events.tap'
 
+      # Money: an unpaid intent must not inflate a pot, and Stripe's
+      # at-least-once delivery must not double-count. Both are asserted.
+      - name: Payment tests
+        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0005_payments.test.sql | tee /tmp/pay.tap
+      - name: Fail on any payment failure
+        run: '! grep -q "^not ok" /tmp/pay.tap'
+
       # The invariance assertions here are the guard against the obvious,
       # well-meaning change: "don't recommend things already reserved". That
       # would turn the slate into a readable encoding of the reservation table.
@@ -139,6 +146,7 @@ jobs:
           test "$(grep -c '^ok ' /tmp/secrecy.tap)" -ge 36
           test "$(grep -c '^ok ' /tmp/events.tap)"  -ge 20
           test "$(grep -c '^ok ' /tmp/reco.tap)"    -ge 21
+          test "$(grep -c '^ok ' /tmp/pay.tap)"     -ge 21
           test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
 
   # The single worst mistake available in a Supabase app is shipping the

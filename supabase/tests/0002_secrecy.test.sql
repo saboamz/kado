@@ -93,14 +93,18 @@ select is_empty(
   'no private/reco table is in a replication publication'
 );
 
--- RLS is enabled AND forced on all three secret tables.
-select is(
-  (select count(*)::int from pg_class c
-   join pg_namespace n on n.oid = c.relnamespace
-   where n.nspname = 'private' and c.relkind = 'r'
-     and c.relrowsecurity and c.relforcerowsecurity),
-  3,
-  'all three private tables have RLS enabled AND forced'
+-- RLS is enabled AND forced on every secret table.
+-- Phrased as "none unforced" rather than a count.
+--
+-- The count version broke the moment P8 added a fourth private table, and it
+-- broke LOOKING LIKE A SECURITY REGRESSION when it was only arithmetic — in
+-- the one suite where a red line must always mean the guarantee is gone.
+select is_empty(
+  $$ select 1 from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'private' and c.relkind = 'r'
+       and not (c.relrowsecurity and c.relforcerowsecurity) $$,
+  'every private table has RLS enabled AND forced'
 );
 
 -- FORCE specifically: without it the table owner bypasses RLS, and Supabase's
