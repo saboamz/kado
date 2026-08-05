@@ -136,6 +136,13 @@ jobs:
       - name: Fail on any recommendation failure
         run: '! grep -q "^not ok" /tmp/reco.tap'
 
+      # CF: the shrinkage and the support floor are what stop a sparse system
+      # ranking one person's coincidence at the top of every slate.
+      - name: Collaborative filtering tests
+        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0007_cf.test.sql | tee /tmp/cf.tap
+      - name: Fail on any CF failure
+        run: '! grep -q "^not ok" /tmp/cf.tap'
+
       # Deduplication quality caps recommendation quality: a product that
       # fragments across rows splits its co-occurrence signal, and no pair
       # reaches the support threshold. Measured here, before any recommender
@@ -155,6 +162,7 @@ jobs:
           test "$(grep -c '^ok ' /tmp/reco.tap)"    -ge 21
           test "$(grep -c '^ok ' /tmp/pay.tap)"     -ge 21
           test "$(grep -c '^ok ' /tmp/notif.tap)"   -ge 16
+          test "$(grep -c '^ok ' /tmp/cf.tap)"      -ge 18
           test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
 
   # The single worst mistake available in a Supabase app is shipping the
