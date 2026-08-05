@@ -1,43 +1,33 @@
+import { useNavigate } from 'react-router-dom';
 import { CenteredState } from '../components/CenteredState';
 import { PlaceholderArt } from '../components/Placeholder';
-import { useStore } from '../state/store';
-import { FONT, useTheme } from '../theme';
+import { Button } from '../ui';
 
+/**
+ * Shown by a list route that has nothing in it.
+ *
+ * No longer a route of its own: "empty" is a state of the wishlist, not a
+ * place you navigate to. It stays exported as a component so any route can
+ * render it.
+ */
 export function EmptyState() {
-  const { dispatch } = useStore();
-  const theme = useTheme();
+  const navigate = useNavigate();
 
   return (
     <CenteredState
       art={
         <PlaceholderArt
           label="ILLU VIDE"
-          fill={theme.t.surface}
           hatch={5}
-          style={{
-            width: 132,
-            height: 132,
-            borderRadius: 34,
-            marginBottom: 26,
-          }}
+          className="mb-6.5 h-33 w-33 rounded-[2.125rem] bg-surface"
         />
       }
       title="Aucune envie ici"
       body="Collez un lien, et Kado remplit la photo, le prix et la description pour vous."
       action={
-        <button
-          onClick={() => dispatch({ type: 'go', screen: 'add' })}
-          style={{
-            height: 48,
-            padding: '0 24px',
-            borderRadius: 15,
-            background: theme.accent,
-            color: '#fff',
-            font: `600 14.5px/1 ${FONT.sans}`,
-          }}
-        >
+        <Button onClick={() => navigate('/ajouter/lien')}>
           Ajouter une envie
-        </button>
+        </Button>
       }
     />
   );

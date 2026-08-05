@@ -2,44 +2,88 @@
 
 > Des listes de souhaits que vos proches remplissent en secret.
 
-React port of the **Kado — Prototype iOS** design: 12 screens, two points of
-view (owner / friend), light and dark themes.
-
 ## The rule this app is built around
 
 **The owner never learns that a gift has been reserved.** Not who reserved it,
 not how many are taken, not that anything happened at all. The surprise is
 structural, not a setting.
 
-That rule is enforced in one place:
+That rule is enforced in two places, and it needs both.
+
+### On the server, which is the half that holds
+
+`reservations`, `pots` and `contributions` live in a Postgres schema that
+PostgREST **does not expose**. `GET /rest/v1/reservations` is a 404 for
+everyone, always, including this app. There is no policy to get wrong and no
+query shape to audit, because there is no reachable table.
+
+The client's entire access is four `SECURITY DEFINER` functions
+(`supabase/migrations/0010_secret_rpcs.sql`). Asked about a list they own, they
+raise `42704` — **the same error a stranger gets for a list they cannot see**.
+Not an empty result, because "empty" and "forbidden" are distinguishable and
+the difference is itself the secret.
+
+Some consequences worth knowing before you change anything:
+
+- `wish_items` has no `reserved_count` column and never will. A reservation
+  writing to the owner's own row is a Realtime timing oracle regardless of RLS.
+- Contributor counts are bucketed (`2-5`, `6+`), never exact.
+- An owner cannot reserve their own item — a constraint, because otherwise they
+  could read it back through "my reservations" and confirm the table holds
+  their list.
+- Notifications carry a `kind` and a payload, never free text, so
+  "Marc a réservé les AirPods" cannot be generated for the wrong recipient.
+
+### On the client, which is presentation only
 
 ```ts
-// src/state/store.tsx
-export function useReservation(giftId: string): Reserver | null {
-  const { state } = useStore();
-  if (state.role === 'owner') return null;
-  return state.reserved[giftId] ?? null;
-}
+// src/api/reservations.ts
+if (isNotFound(error)) return new Map();
 ```
 
-Screens never read `state.reserved` directly. An owner is handed `null`, so
-there is no reservation state for a component to accidentally render — no
-badge, no counter, no disabled button hinting at what lies underneath. The data
-survives the role switch untouched; it simply stops being reported.
+An owner's request is refused, so the map is empty and there is nothing for a
+component to render — no badge, no counter, no disabled button hinting at what
+lies underneath. Note that the refusal becomes an empty result rather than an
+error: an error screen on your own list is itself a signal that the list has
+something to hide.
 
-`src/App.test.tsx` walks the whole journey: reserve as a friend, switch to
-owner, assert every trace is gone, switch back, find the reservation intact.
+The client-side selectors that used to filter this data are gone. They worked,
+and they were never a guarantee — the secret sat in the store either way, one
+devtools inspection from being read. They were deleted rather than deprecated,
+because a working selector with the right-looking shape is what a future screen
+copies.
 
-## Screens
+This half is **cosmetic on its own**. It stops the UI drawing the secret; it
+does not stop the server sending it. That is why the tests come in pairs.
 
-| # | Screen | # | Screen |
-| --- | --- | --- | --- |
-| 01 | Onboarding | 07 | Détail cadeau |
-| 02 | Accueil | 08 | Cadeau collaboratif |
-| 03 | Recherche | 09 | Ajouter une envie |
-| 04 | Notifications | 10 | Paramètres |
-| 05 | Profil | 11 | État vide |
-| 06 | Liste de souhaits | 12 | Écran d'erreur |
+## Tests
+
+| Suite | Proves | |
+| --- | --- | --- |
+| `npm test` | The UI never renders a reservation to the owner | 191 |
+| `0001_schema` | Schema invariants hold | 75 |
+| `0002_secrecy` | The server never sends a reservation to its owner | 36 |
+| `0003_events` | A client cannot forge a purchase into the model | 20 |
+| `0004_reco` | The slate does not encode reservation state | 21 |
+| `0005_payments` | An unpaid intent cannot inflate a pot | 21 |
+| `0006_notifications` | Nobody is told about their own present | 16 |
+| `0007_cf` | Shrinkage and the support floor hold | 18 |
+| `0008_evaluation` | A tier that has not earned its place can be found | 15 |
+| `dedup-corpus` | The catalogue collapses duplicates, and only duplicates | 16 |
+
+Every one of these has been verified to FAIL when the thing it guards is
+broken. That check matters more than the count: an assertion of absence proves
+nothing until you have confirmed the thing could have been present, and three
+times in this project a test passed while the hole it guarded was wide open.
+
+The database job is a **required check**. Schema exposure is a dashboard
+toggle, outside version control — exactly the kind of thing flipped during an
+incident and never flipped back.
+
+Both database suites have been verified to fail when the guarantee is broken:
+granting `authenticated` access to the private schema, adding a
+`reserved_count` column, or removing the owner guard from an RPC each turn them
+red by name.
 
 ## Getting started
 
@@ -48,8 +92,11 @@ npm install
 npm run dev
 ```
 
-Use the sidebar to jump between screens, and the toggles top-right to switch
-role and theme.
+```bash
+# Database (requires the Supabase CLI, or any Postgres 16 + pgvector)
+supabase db reset
+supabase test db
+```
 
 ## Scripts
 
@@ -65,18 +112,59 @@ role and theme.
 
 ```
 src/
-  components/   device chrome (frame, status bar, tab bar) and shared UI
-  screens/      one file per screen, registered in components/Screen.tsx
-  state/        the store, and the reservation selectors that hold the rule
-  theme/        design tokens, light/dark context, style helpers
-  data/         types and fixtures
+  app/          router, layouts, route-level error boundary
+  api/          the typed data layer (RPC wrappers; no direct table access)
+  ui/           design-system primitives (Button, Card, Chip, ScreenShell…)
+  components/   shared app components
+  screens/      one file per screen, mounted by the route table
+  state/        UI preferences (theme, layout) and the viewer's role
+  lib/          Supabase client, generated types, money, the mock transport
+  styles/       Tailwind entry and design tokens
+  data/         static UI copy, and the seed the mock transport serves
+
+supabase/
+  migrations/   0001-0008 public schema · 0009-0010 the secret layer
+  tests/        pgTAP: schema invariants, and the secrecy guarantee
+  seed.sql      deterministic fixtures
 ```
 
-State is a `useReducer` store with typed actions. There is no backend: all data
-comes from `src/data/`, and the link "analysis" in the add flow is a timeout.
+Navigation is URL-based (React Router v7). **Ownership is derived from the
+handle in the URL, never from client state** — the prototype's role toggle is
+gone, and with it the idea that a viewpoint is something you can switch.
 
-Screens are registered in a `Record<ScreenId, ComponentType>` — adding a screen
-id without a matching component is a compile error.
+Styling is Tailwind v4 with the palette as CSS custom properties. The two token
+files (`src/theme/tokens.ts` for TypeScript, `src/styles/tokens.css` for CSS)
+are pinned to each other by a test, because CSS cannot import from TypeScript
+and the pair would otherwise drift in silence.
+
+## Status
+
+Shipped: design tokens and primitives, the router, the public schema, the
+secrecy layer, authentication, and the data layer — every screen reads the API.
+
+What still imports from `src/data/` is static UI copy and formatters (`stars()`,
+`PRIO_LABEL`, the onboarding slides, the settings labels), plus `FEED`, which
+needs a table of its own. A priority label is not something to fetch.
+
+Without a configured project the app runs against `src/lib/mockTransport.ts`,
+which answers `.rpc()`, `.from()` and `functions.invoke()` — and carries the
+same refusals the SQL does, so an owner is turned away there too. Pass `?as=marc`
+to look at Sophie's list as a friend. Production builds throw at import when the
+env vars are missing, so the mock cannot ship.
+
+Recommendations run as a cascade — `cf_item`, `content_vector`,
+`content_facet`, `popularity` — and every row records which tier produced it,
+so per-tier conversion is measurable and "why is this here" is answerable.
+
+CF is gated on ~5 000 giving events and is not the point of the feature. If it
+does not beat category popularity on held-out recall, the honest response is to
+delete it from the cascade rather than retune until the numbers agree;
+`reco.evaluation_verdict()` exists to make that call possible, and
+`reco.tier_mix()` to notice that a stalled `cf_item` share means deduplication
+is broken before the model is.
+
+Next: wiring the recommendation slate into the UI, and a Stripe test-mode
+end-to-end run.
 
 ## Contributing
 

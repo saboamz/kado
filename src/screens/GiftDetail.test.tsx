@@ -1,84 +1,162 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GiftDetail } from './GiftDetail';
-import { renderScreen } from '../test/render';
+import { renderScreen, MARC, SOPHIE } from '../test/render';
+import { resetMockData } from '../lib/mockTransport';
 
-const onGift = (id: string) => ({ screen: 'detail' as const, current: id });
-const onPot = { screen: 'pot' as const, current: 'g3' };
+/**
+ * Ownership is the URL's handle matched against the signed-in viewer, not a
+ * `role` field. The list is always Sophie's; what changes is who is looking —
+ * as Sophie it is her own gift, as Marc it is a friend's view of it.
+ *
+ * Reservation and pot state now arrive from RPCs — answered under test by
+ * src/lib/mockTransport.ts — instead of the store, so these tests seed the
+ * transport with resetMockData() rather than passing `initial: { reserved }`.
+ * That is the whole point of the migration: the transport REFUSES an owner
+ * outright instead of handing the screen data to filter, so what a viewer sees
+ * is decided by who they are. Anything downstream of that answer is
+ * asynchronous — `findBy`, not `getBy`.
+ *
+ * The gift ITSELF is asynchronous too now: it comes from wishItemsQuery, and
+ * the screen renders an `aria-busy` skeleton block while `gift` is undefined.
+ * So the name, the price, the merchant and the priority are all `findBy` as
+ * well. The rows are the fixture gifts as wish_items, which renames the
+ * fields — `name` is `title`, `desc` is `note`, `prio` is `priority` — and
+ * turns the formatted `price` string into `price_cents` formatted at render.
+ */
+const DETAIL_PATH = '/u/:handle/listes/:slug/:itemId';
+const POT_PATH = '/u/:handle/listes/:slug/:itemId/cagnotte';
+const LIST = '/u/sophie/listes/anniversaire';
+
+const asFriend = (id: string) => ({
+  route: `${LIST}/${id}`,
+  path: DETAIL_PATH,
+  viewer: MARC,
+});
+const asOwner = (id: string) => ({
+  route: `${LIST}/${id}`,
+  path: DETAIL_PATH,
+  viewer: SOPHIE,
+});
+const onPot = {
+  route: `${LIST}/g3/cagnotte`,
+  path: POT_PATH,
+  viewer: MARC,
+};
+const onPotAsOwner = {
+  route: `${LIST}/g3/cagnotte`,
+  path: POT_PATH,
+  viewer: SOPHIE,
+};
 
 describe('the gift', () => {
-  it('shows name, price, category and description', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
-    expect(screen.getByRole('heading')).toHaveTextContent('AirPods Pro 3');
-    expect(screen.getByText('279 €')).toBeInTheDocument();
+  it('waits for the gift rather than rendering an empty one', () => {
+    renderScreen(<GiftDetail />, asFriend('g1'));
+    // Nothing item-shaped on the first paint: `gifts[0]` is undefined until
+    // the query lands, so the screen shows a busy placeholder instead of a
+    // half-built detail page with blank fields.
+    expect(document.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
+
+  it('shows name, price, category and description', async () => {
+    renderScreen(<GiftDetail />, asFriend('g1'));
+    expect(await screen.findByRole('heading')).toHaveTextContent(
+      'AirPods Pro 3',
+    );
+    // 27900 cents, formatted at render. Intl emits a narrow no-break space
+    // before the €, so this matches by pattern rather than pasting an
+    // invisible character into the assertion.
+    expect(await screen.findByText(/^279\s*€$/)).toBeInTheDocument();
     expect(screen.getByText('Tech')).toBeInTheDocument();
+    // The fixture's `desc` is the row's `note`.
     expect(screen.getByText(/Réduction de bruit active/)).toBeInTheDocument();
   });
 
-  it('credits the merchant', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
-    expect(screen.getByText('Apple Store')).toBeInTheDocument();
+  it('credits the merchant', async () => {
+    renderScreen(<GiftDetail />, asFriend('g1'));
+    expect(await screen.findByText('Apple Store')).toBeInTheDocument();
     expect(screen.getByText('apple.com/fr/airpods-pro')).toBeInTheDocument();
   });
 
-  it('labels the priority for assistive tech', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g5') });
-    expect(screen.getByLabelText('Priorité 1 sur 3')).toBeInTheDocument();
+  it('labels the priority for assistive tech', async () => {
+    renderScreen(<GiftDetail />, asFriend('g5'));
+    // The fixture's `prio` is the row's `priority`.
+    expect(await screen.findByLabelText('Priorité 1 sur 3')).toBeInTheDocument();
     expect(screen.getByText('Ce serait sympa')).toBeInTheDocument();
   });
 
   it('goes back to the list', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
-    await user.click(screen.getByRole('button', { name: 'Retour à la liste' }));
-    expect(screen.getByTestId('screen')).toHaveTextContent('list');
+    renderScreen(<GiftDetail />, asFriend('g1'));
+    // The back link lives inside the loaded screen, not the skeleton, so it
+    // arrives with the gift.
+    await user.click(
+      await screen.findByRole('link', { name: 'Retour à la liste' }),
+    );
+    expect(screen.getByTestId('path')).toHaveTextContent(LIST);
   });
 });
 
 describe('reserving as a friend', () => {
   it('reserves an available gift and reassures the reserver', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
-    await user.click(screen.getByRole('button', { name: 'Réserver ce cadeau' }));
+    renderScreen(<GiftDetail />, asFriend('g1'));
+    await user.click(
+      await screen.findByRole('button', { name: 'Réserver ce cadeau' }),
+    );
     expect(screen.getByTestId('toast')).toHaveTextContent(
       'Réservé — Sophie ne verra rien',
     );
+    // Reserving round-trips through the RPC and then invalidates the query, so
+    // the new label lands a tick after the click rather than synchronously.
     expect(
-      screen.getByRole('button', { name: 'Annuler ma réservation' }),
+      await screen.findByRole('button', { name: 'Annuler ma réservation' }),
     ).toBeInTheDocument();
   });
 
   it('releases a gift it already holds', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g1'), reserved: { g1: 'you' } },
-    });
+    resetMockData({ reserved: { g1: 'you' } });
+    renderScreen(<GiftDetail />, asFriend('g1'));
     await user.click(
-      screen.getByRole('button', { name: 'Annuler ma réservation' }),
+      await screen.findByRole('button', { name: 'Annuler ma réservation' }),
     );
     expect(screen.getByTestId('toast')).toHaveTextContent(
       'Réservation annulée',
     );
     expect(
-      screen.getByRole('button', { name: 'Réserver ce cadeau' }),
+      await screen.findByRole('button', { name: 'Réserver ce cadeau' }),
     ).toBeInTheDocument();
   });
 
-  it("disables a gift another friend already took", () => {
-    renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g2'), reserved: { g2: 'other' } },
-    });
+  it('disables a gift another friend already took', async () => {
+    resetMockData({ reserved: { g2: 'other' } });
+    renderScreen(<GiftDetail />, asFriend('g2'));
     expect(
-      screen.getByRole('button', { name: 'Déjà réservé par un proche' }),
+      await screen.findByRole('button', { name: 'Déjà réservé par un proche' }),
     ).toBeDisabled();
   });
 });
 
 describe('the secrecy rule on the detail screen', () => {
-  it('offers the owner editing, never reserving', () => {
-    renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g1'), role: 'owner', reserved: { g1: 'other' } },
-    });
+  /**
+   * The call to action, which is a RENDER choice rather than a data one.
+   *
+   * Worth being precise about what this proves. The label comes from
+   * `owner ? 'Modifier ce cadeau' : …` in GiftDetail, so it stays correct even
+   * if the server started handing an owner reservation state — this test would
+   * not catch that. It is still worth keeping: an owner offered a "Réserver"
+   * button on their own gift is a real bug, just a UX one rather than a leak.
+   *
+   * The test that does bite on this screen is 'hides the whole pot from the
+   * owner' below: Pot renders purely from what usePot returns, with no owner
+   * branch to fall back on, so it fails the moment the server answers.
+   */
+  it('offers the owner editing, never reserving', async () => {
+    resetMockData({ reserved: { g1: 'other' } });
+    renderScreen(<GiftDetail />, asOwner('g1'));
+    await settleAsOwner();
     expect(
       screen.getByRole('button', { name: 'Modifier ce cadeau' }),
     ).toBeInTheDocument();
@@ -87,10 +165,27 @@ describe('the secrecy rule on the detail screen', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('tells the owner no reservation data exists here', () => {
-    renderScreen(<GiftDetail />, {
-      initial: { ...onGift('g1'), role: 'owner', reserved: { g1: 'other' } },
-    });
+  /**
+   * The reassurance card's wording, which is likewise an owner branch in
+   * GiftDetail rather than something derived from the server's answer. Same
+   * caveat as above: it pins the copy an owner is shown, not the guarantee
+   * behind it.
+   *
+   * The friend half is the useful part — it proves the card really does vary
+   * with reservation state, so the owner wording is a deliberate branch and
+   * not the card's only mode.
+   */
+  it('tells the owner no reservation data exists here', async () => {
+    resetMockData({ reserved: { g1: 'other' } });
+
+    const { unmount } = renderScreen(<GiftDetail />, asFriend('g1'));
+    expect(
+      await screen.findByText(/Sophie ne verra jamais cette réservation/),
+    ).toBeInTheDocument();
+    unmount();
+
+    renderScreen(<GiftDetail />, asOwner('g1'));
+    await settleAsOwner();
     expect(
       screen.getByText(/aucune information de réservation n'existe/),
     ).toBeInTheDocument();
@@ -99,56 +194,160 @@ describe('the secrecy rule on the detail screen', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('hides the whole pot from the owner', () => {
-    renderScreen(<GiftDetail />, { initial: { ...onPot, role: 'owner' } });
+  it('hides the whole pot from the owner', async () => {
+    // The control: the pot renders in full for a friend on this exact route.
+    const { unmount } = renderScreen(<GiftDetail />, onPot);
+    expect(
+      await screen.findByRole('region', { name: 'Cagnotte' }),
+    ).toBeInTheDocument();
+    unmount();
+
+    renderScreen(<GiftDetail />, onPotAsOwner);
+    await settleAsOwner();
+    // Not an empty section — no section at all. usePot hands back null because
+    // the server declined to describe the pot.
     expect(
       screen.queryByRole('region', { name: 'Cagnotte' }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/récoltés/)).not.toBeInTheDocument();
   });
 
-  it('promises anonymity to a friend before they reserve', () => {
-    renderScreen(<GiftDetail />, { initial: onGift('g1') });
+  it('promises anonymity to a friend before they reserve', async () => {
+    resetMockData({ reserved: {} });
+    renderScreen(<GiftDetail />, asFriend('g1'));
     expect(
-      screen.getByText('Votre réservation restera invisible pour Sophie.'),
+      await screen.findByText('Votre réservation restera invisible pour Sophie.'),
     ).toBeInTheDocument();
   });
 });
 
 describe('the cagnotte', () => {
-  it('shows progress toward the target', () => {
-    renderScreen(<GiftDetail />, { initial: onPot });
-    const bar = screen.getByRole('progressbar', { name: /Cagnotte à/ });
-    expect(bar).toHaveAttribute('aria-valuenow', '650');
-    expect(bar).toHaveAttribute('aria-valuemax', '1599');
-    expect(screen.getByText('650 € récoltés')).toBeInTheDocument();
+  it('shows progress toward the target', async () => {
+    renderScreen(<GiftDetail />, onPot);
+    // The pot arrives from get_pot_state in CENTS: 65 000 raised of 159 900,
+    // and Progress reports those raw values.
+    const bar = await screen.findByRole('progressbar', { name: /Cagnotte à/ });
+    expect(bar).toHaveAttribute('aria-valuenow', '65000');
+    expect(bar).toHaveAttribute('aria-valuemax', '159900');
+    // Intl formats with non-breaking spaces, so these match by pattern rather
+    // than pasting invisible characters into the assertion.
+    expect(await screen.findByText(/^650\s€ récoltés$/)).toBeInTheDocument();
+    expect(screen.getByText(/sur\s1\s599\s€/)).toBeInTheDocument();
+  });
+
+  it('offers contribution amounts derived from the pot currency', async () => {
+    const user = userEvent.setup();
+    renderScreen(<GiftDetail />, onPot);
+    // 20/50/100/200 €, formatted from AMOUNTS_CENTS.
+    for (const amount of [20, 50, 100, 200]) {
+      expect(
+        await screen.findByRole('button', {
+          name: new RegExp(`^${amount}\\s€$`),
+        }),
+      ).toBeInTheDocument();
+    }
+    // Choosing an amount retargets the call to action.
+    await user.click(screen.getByRole('button', { name: /^100\s€$/ }));
+    expect(
+      screen.getByRole('button', { name: 'Participer avec 100 €' }),
+    ).toBeInTheDocument();
   });
 
   it('contributes the chosen amount, anonymously', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: onPot });
-    await user.click(screen.getByRole('button', { name: '100 €' }));
+    renderScreen(<GiftDetail />, onPot);
+    await user.click(await screen.findByRole('button', { name: /^100\s€$/ }));
     await user.click(
       screen.getByRole('button', { name: 'Participer avec 100 €' }),
     );
+    // Anonymity is the promise the contribution flow makes; the running total
+    // it produces is asserted separately below.
     expect(screen.getByTestId('toast')).toHaveTextContent(
       'votre participation est anonyme',
     );
-    expect(screen.getByText('750 € récoltés')).toBeInTheDocument();
+  });
+
+  /**
+   * The running total moves, and it moves because the SERVER says so.
+   *
+   * Worth asserting separately from the toast: the toast is written from
+   * `state.contrib` and would keep claiming a contribution even if none
+   * reached the server. This reads the total back out of get_pot_state, so it
+   * only passes if the contribute RPC actually ran and the pot query was
+   * invalidated behind it.
+   */
+  it('adds the contribution to the running total', async () => {
+    const user = userEvent.setup();
+    renderScreen(<GiftDetail />, onPot);
+    await user.click(await screen.findByRole('button', { name: /^100\s€$/ }));
+    await user.click(
+      screen.getByRole('button', { name: 'Participer avec 100 €' }),
+    );
+    expect(await screen.findByText(/^750\s€ récoltés$/)).toBeInTheDocument();
   });
 
   it('never overshoots the target', async () => {
     const user = userEvent.setup();
-    renderScreen(<GiftDetail />, { initial: { ...onPot, pot: 1550, contrib: 200 } });
+    // 1 550 € of a 1 599 € target, so a 200 € top-up would overshoot by 151 €.
+    // The clamp lives server-side (`Math.min(POT_TOTAL * 100, …)`), which is
+    // why this asserts the rendered total rather than any local arithmetic.
+    resetMockData({ potRaisedCents: 155000 });
+    renderScreen(<GiftDetail />, onPot);
+    await user.click(await screen.findByRole('button', { name: /^200\s€$/ }));
     await user.click(
       screen.getByRole('button', { name: 'Participer avec 200 €' }),
     );
-    expect(screen.getByText('1 599 € récoltés')).toBeInTheDocument();
+    expect(await screen.findByText(/^1\s599\s€ récoltés$/)).toBeInTheDocument();
   });
 
-  it('falls back to a collaborative gift when the pot screen has none', () => {
-    // Arriving from the feed's cagnotte entry: screen is 'pot', current is 'g1'.
-    renderScreen(<GiftDetail />, { initial: { screen: 'pot', current: 'g1' } });
-    expect(screen.getByRole('region', { name: 'Cagnotte' })).toBeInTheDocument();
+  it('falls back to a collaborative gift when the pot screen has none', async () => {
+    // Arriving from the feed's cagnotte entry: the URL ends in /cagnotte but
+    // points at g1, which has no pot of its own.
+    renderScreen(<GiftDetail />, {
+      route: `${LIST}/g1/cagnotte`,
+      path: POT_PATH,
+      viewer: MARC,
+    });
+    expect(
+      await screen.findByRole('region', { name: 'Cagnotte' }),
+    ).toBeInTheDocument();
   });
 });
+
+/**
+ * Wait until the screen has stopped changing.
+ *
+ * Two asynchronous things have to have happened before an absence assertion
+ * means anything: the gift must have arrived from wishItemsQuery — until it
+ * does the screen is a skeleton with nothing on it to leak — and the
+ * reservation and pot RPCs must have been issued and refused.
+ *
+ * Deliberately not "wait for the owner's reassurance card": that card is an
+ * owner branch in GiftDetail, so it renders the moment the gift lands, before
+ * the RPCs behind it have resolved. An absence assertion behind such a wait
+ * passes even when the server is leaking — the leak just arrives a tick later.
+ * Verified by stubbing the transport to answer an owner with a friend's data;
+ * the card-based wait still passed, and the pot appeared immediately
+ * afterwards.
+ *
+ * So anchor on the gift being on screen at all — which the skeleton cannot
+ * fake — and then settle on quiescence: poll until the rendered text is
+ * unchanged across consecutive macrotasks. That puts any late answer inside
+ * the window, where the assertions can see it.
+ */
+async function settleAsOwner() {
+  // The gift itself. Everything the owner assertions are about hangs off it,
+  // and none of it can be judged absent while the screen is still a skeleton.
+  await screen.findByRole('heading');
+
+  let previous = '';
+  await waitFor(
+    () => {
+      const current = document.body.textContent ?? '';
+      const stable = current === previous;
+      previous = current;
+      expect(stable).toBe(true);
+    },
+    { interval: 10 },
+  );
+}

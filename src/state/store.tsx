@@ -9,91 +9,60 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Reserver, Role, ScreenId, TabId } from '../data/types';
+import type { Reserver, Role } from '../data/types';
 import { POT_TOTAL } from '../data/fixtures';
+import { useViewer } from '../auth/SessionContext';
 
-const TAB_OF: Partial<Record<ScreenId, TabId>> = {
-  home: 'home',
-  search: 'search',
-  notifs: 'notifs',
-  profile: 'profile',
-  add: 'add',
-};
-
+/**
+ * What is left of the store after the router took its share.
+ *
+ * The prototype kept 18 fields in one flat object: navigation, UI preferences
+ * and domain data together. Navigation now lives in the URL, so `screen`,
+ * `tab`, `current`, `query`, `filter`, `addStep` and `onb` are gone from here —
+ * they are `useParams`/`useSearchParams`/`useMatches` at the point of use.
+ *
+ * What remains is two different things that will separate again in P6:
+ *
+ *   - UI preferences (`dark`, `layout`) — genuinely client state, and the only
+ *     part of this store with a long-term future.
+ *   - Domain data (`reserved`, `pot`, `contrib`, `liked`) — placeholders for
+ *     server state. These disappear when TanStack Query and the Supabase RPCs
+ *     land; nothing new should be added alongside them.
+ */
 export type State = {
-  screen: ScreenId;
-  tab: TabId;
   dark: boolean;
-  role: Role;
-  onb: number;
-  current: string;
+  layout: 'grid' | 'rows';
   /** Gift id -> who holds it. Never read directly; use useReservation(). */
   reserved: Record<string, Reserver>;
   pot: number;
   contrib: number;
-  layout: 'grid' | 'rows';
-  link: string;
-  addStep: 0 | 1 | 2;
-  addList: string;
-  addPrio: 1 | 2 | 3;
-  query: string;
-  filter: string;
   liked: Record<string, boolean>;
 };
 
 const INITIAL: State = {
-  screen: 'home',
-  tab: 'home',
   dark: false,
-  role: 'friend',
-  onb: 0,
-  current: 'g1',
+  layout: 'grid',
   reserved: { g2: 'other' },
   pot: 650,
   contrib: 50,
-  layout: 'grid',
-  link: '',
-  addStep: 0,
-  addList: 'Anniversaire',
-  addPrio: 3,
-  query: '',
-  filter: 'Amis',
   liked: { c1: true },
 };
 
 type Action =
-  | { type: 'go'; screen: ScreenId }
-  | { type: 'openGift'; id: string; pot?: boolean }
-  | { type: 'setRole'; role: Role }
   | { type: 'setDark'; dark: boolean }
-  | { type: 'onbNext' }
+  | { type: 'toggleLayout' }
   | { type: 'reserve'; id: string }
   | { type: 'unreserve'; id: string }
   | { type: 'contribute'; amount: number }
   | { type: 'setContrib'; amount: number }
-  | { type: 'toggleLayout' }
-  | { type: 'setLink'; link: string }
-  | { type: 'setAddStep'; step: 0 | 1 | 2 }
-  | { type: 'setAddList'; list: string }
-  | { type: 'setAddPrio'; prio: 1 | 2 | 3 }
-  | { type: 'setQuery'; query: string }
-  | { type: 'setFilter'; filter: string }
   | { type: 'toggleLike'; id: string };
 
 function reducer(s: State, a: Action): State {
   switch (a.type) {
-    case 'go':
-      return { ...s, screen: a.screen, tab: TAB_OF[a.screen] ?? s.tab };
-    case 'openGift':
-      return { ...s, screen: a.pot ? 'pot' : 'detail', current: a.id };
-    case 'setRole':
-      return { ...s, role: a.role };
     case 'setDark':
       return { ...s, dark: a.dark };
-    case 'onbNext':
-      return s.onb < 2
-        ? { ...s, onb: s.onb + 1 }
-        : { ...s, screen: 'home', tab: 'home' };
+    case 'toggleLayout':
+      return { ...s, layout: s.layout === 'grid' ? 'rows' : 'grid' };
     case 'reserve':
       return { ...s, reserved: { ...s.reserved, [a.id]: 'you' } };
     case 'unreserve': {
@@ -105,20 +74,6 @@ function reducer(s: State, a: Action): State {
       return { ...s, pot: Math.min(POT_TOTAL, s.pot + a.amount) };
     case 'setContrib':
       return { ...s, contrib: a.amount };
-    case 'toggleLayout':
-      return { ...s, layout: s.layout === 'grid' ? 'rows' : 'grid' };
-    case 'setLink':
-      return { ...s, link: a.link };
-    case 'setAddStep':
-      return { ...s, addStep: a.step };
-    case 'setAddList':
-      return { ...s, addList: a.list };
-    case 'setAddPrio':
-      return { ...s, addPrio: a.prio };
-    case 'setQuery':
-      return { ...s, query: a.query };
-    case 'setFilter':
-      return { ...s, filter: a.filter };
     case 'toggleLike':
       return { ...s, liked: { ...s.liked, [a.id]: !s.liked[a.id] } };
   }
@@ -152,6 +107,12 @@ export function StoreProvider({
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // The theme is a document-level concern now: Tailwind's dark variants key off
+  // a `.dark` class on <html>, so components no longer thread it through React.
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', state.dark);
+  }, [state.dark]);
+
   const value = useMemo(
     () => ({ state, dispatch, toast, flash }),
     [state, toast, flash],
@@ -166,20 +127,35 @@ export function useStore(): Store {
 }
 
 /**
- * The one way to ask "is this gift reserved?".
+ * Who the current viewer is relative to the wishlist being shown.
  *
- * For an owner this ALWAYS returns null — not "reserved by someone unnamed",
- * but nothing at all. The owner's UI cannot render a reservation state it is
- * never handed. Reading `state.reserved` directly in a screen defeats this;
- * don't.
+ * The prototype had a `role` field flipped by a toggle in the dev chrome; the
+ * router phase replaced it with a hardcoded handle; this compares the list's
+ * owner against the actual signed-in profile.
+ *
+ * This decides what to RENDER and nothing more. It is not a security boundary
+ * and must never be treated as one: the server makes every secrecy decision
+ * from `auth.uid()`, so a viewer who tampers with this changes what their own
+ * UI draws and not one byte of what the API will hand them.
+ *
+ * Signed out, everyone is a friend. That direction matters — failing the other
+ * way would show an unauthenticated visitor the owner's view, which is the
+ * view that hides things and would therefore look like it worked.
  */
-export function useReservation(giftId: string): Reserver | null {
-  const { state } = useStore();
-  if (state.role === 'owner') return null;
-  return state.reserved[giftId] ?? null;
+export function useViewerRole(ownerHandle: string | undefined): Role {
+  const viewer = useViewer();
+  if (!viewer || !ownerHandle) return 'friend';
+  return ownerHandle === viewer.handle ? 'owner' : 'friend';
 }
 
-/** True when the viewer is the list owner. */
-export function useIsOwner(): boolean {
-  return useStore().state.role === 'owner';
-}
+/*
+ * useReservation, useReservedCount and usePotState lived here.
+ *
+ * They filtered data the browser already held — correct, and never a
+ * guarantee: the secret sat in the store either way, one devtools inspection
+ * from being read. Their replacements in src/api/useReservations.ts ask a
+ * server that refuses to send it, so there is nothing left to filter.
+ *
+ * They are deleted rather than deprecated on purpose. A working selector with
+ * the right-looking shape is the thing a future screen copies.
+ */

@@ -1,39 +1,46 @@
 import type { ReactNode } from 'react';
-import { FONT, useTheme } from '../theme';
+import { cn } from '../ui';
 
-/** The large screen heading shared by Home, Search, Notifications, Settings. */
+/**
+ * The large screen heading.
+ *
+ * Five screens used this; four more hand-rolled their own <h2> at 25px, 28px,
+ * 30px and 18px. Those are now `size`, so the family is one component again.
+ *
+ * `margin` was a raw CSS string prop; it is a className now, which is both
+ * mergeable and responsive.
+ */
 export function ScreenTitle({
   children,
   trailing,
-  margin = '0 0 20px',
+  size = 'lg',
+  className,
 }: {
   children: ReactNode;
   trailing?: ReactNode;
-  margin?: string;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
 }) {
-  const { t } = useTheme();
   const heading = (
     <h2
-      style={{
-        font: `700 30px/1.1 ${FONT.sans}`,
-        letterSpacing: '-.03em',
-        color: t.fg,
-        margin: 0,
-      }}
+      className={cn(
+        'leading-none font-bold tracking-tighter text-fg',
+        size === 'sm' && 'text-xl',
+        size === 'md' && 'text-3xl',
+        size === 'lg' && 'text-4xl sm:text-5xl',
+      )}
     >
       {children}
     </h2>
   );
 
-  if (!trailing) return <div style={{ margin }}>{heading}</div>;
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        margin,
-      }}
+      className={cn(
+        'mb-5',
+        trailing && 'flex items-center justify-between gap-3',
+        className,
+      )}
     >
       {heading}
       {trailing}

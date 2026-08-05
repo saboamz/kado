@@ -1,141 +1,94 @@
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import {
-  StoreProvider,
-  useIsOwner,
-  useReservation,
-  useStore,
-  type State,
-} from './store';
+import { StoreProvider, useStore, useViewerRole, type State } from './store';
+import { StubSessionProvider, type Viewer } from '../auth/SessionContext';
+import { MARC, SOPHIE } from '../test/render';
 
-const wrap = (initial?: Partial<State>) =>
+/**
+ * What the store still owns after the API took the domain data.
+ *
+ * The secrecy selectors that used to live here — useReservation,
+ * useReservedCount, usePotState — are gone, and so are their tests. Their
+ * replacements are covered in src/api/reservations.test.tsx, against a server
+ * that refuses rather than a filter that hides. That is the same guarantee
+ * tested one layer down, where it actually holds.
+ */
+const wrap = (initial?: Partial<State>, viewer: Viewer | null = MARC) =>
   function Wrapper({ children }: { children: ReactNode }) {
-    return <StoreProvider initial={initial}>{children}</StoreProvider>;
+    return (
+      <StubSessionProvider viewer={viewer}>
+        <StoreProvider initial={initial}>{children}</StoreProvider>
+      </StubSessionProvider>
+    );
   };
 
-describe('navigation', () => {
-  it('follows the tab when moving to a tabbed screen', () => {
-    const { result } = renderHook(() => useStore(), { wrapper: wrap() });
-    act(() => result.current.dispatch({ type: 'go', screen: 'search' }));
-    expect(result.current.state.screen).toBe('search');
-    expect(result.current.state.tab).toBe('search');
-  });
-
-  it('keeps the active tab on screens outside the tab bar', () => {
-    const { result } = renderHook(() => useStore(), { wrapper: wrap() });
-    act(() => result.current.dispatch({ type: 'go', screen: 'settings' }));
-    expect(result.current.state.screen).toBe('settings');
-    expect(result.current.state.tab).toBe('home');
-  });
-
-  it('routes a collaborative gift to the pot screen', () => {
-    const { result } = renderHook(() => useStore(), { wrapper: wrap() });
-    act(() =>
-      result.current.dispatch({ type: 'openGift', id: 'g3', pot: true }),
-    );
-    expect(result.current.state.screen).toBe('pot');
-    expect(result.current.state.current).toBe('g3');
-  });
-
-  it('advances onboarding then lands on home', () => {
-    const { result } = renderHook(() => useStore(), {
-      wrapper: wrap({ screen: 'onboarding' }),
+describe('useViewerRole', () => {
+  it('treats the signed-in handle as the owner', () => {
+    // Sophie, looking at Sophie's list.
+    const { result } = renderHook(() => useViewerRole('sophie'), {
+      wrapper: wrap(undefined, SOPHIE),
     });
-    act(() => result.current.dispatch({ type: 'onbNext' }));
-    act(() => result.current.dispatch({ type: 'onbNext' }));
-    expect(result.current.state.onb).toBe(2);
-    act(() => result.current.dispatch({ type: 'onbNext' }));
-    expect(result.current.state.screen).toBe('home');
+    expect(result.current).toBe('owner');
+  });
+
+  it('treats anyone else as a friend', () => {
+    // Marc, looking at Sophie's list.
+    const { result } = renderHook(() => useViewerRole('sophie'), {
+      wrapper: wrap(undefined, MARC),
+    });
+    expect(result.current).toBe('friend');
+  });
+
+  it('treats a signed-out visitor as a friend, never as the owner', () => {
+    // Failing open here would hand an anonymous visitor the OWNER's view —
+    // the view that hides reservations, the pot and the count — so the leak
+    // would look exactly like the feature working.
+    const { result } = renderHook(() => useViewerRole('sophie'), {
+      wrapper: wrap(undefined, null),
+    });
+    expect(result.current).toBe('friend');
+  });
+
+  it('defaults an unknown handle to friend rather than owner', () => {
+    const { result } = renderHook(() => useViewerRole(undefined), {
+      wrapper: wrap(undefined, SOPHIE),
+    });
+    expect(result.current).toBe('friend');
   });
 });
 
-describe('reservations', () => {
-  it('reserves and releases a gift for a friend', () => {
-    const { result } = renderHook(
-      () => ({ store: useStore(), res: useReservation('g1') }),
-      { wrapper: wrap() },
-    );
-    expect(result.current.res).toBeNull();
-    act(() => result.current.store.dispatch({ type: 'reserve', id: 'g1' }));
-    expect(result.current.res).toBe('you');
-    act(() => result.current.store.dispatch({ type: 'unreserve', id: 'g1' }));
-    expect(result.current.res).toBeNull();
-  });
-
-  it("shows a friend that someone else holds a gift", () => {
-    const { result } = renderHook(() => useReservation('g2'), {
-      wrapper: wrap(),
-    });
-    expect(result.current).toBe('other');
-  });
-});
-
-describe('the secrecy rule', () => {
-  it('hides every reservation from the owner', () => {
-    const { result } = renderHook(
-      () => ({ g1: useReservation('g1'), g2: useReservation('g2') }),
-      { wrapper: wrap({ role: 'owner', reserved: { g1: 'you', g2: 'other' } }) },
-    );
-    expect(result.current.g1).toBeNull();
-    expect(result.current.g2).toBeNull();
-  });
-
-  it('reveals them again to a friend', () => {
-    const { result } = renderHook(() => useReservation('g2'), {
-      wrapper: wrap({ role: 'friend', reserved: { g2: 'other' } }),
-    });
-    expect(result.current).toBe('other');
-  });
-
-  it('keeps reservations intact under the owner, it only stops reporting them', () => {
-    // Switching roles must not destroy data; the friend view still works after.
-    const { result } = renderHook(
-      () => ({ store: useStore(), res: useReservation('g1') }),
-      { wrapper: wrap() },
-    );
-    act(() => result.current.store.dispatch({ type: 'reserve', id: 'g1' }));
-    act(() =>
-      result.current.store.dispatch({ type: 'setRole', role: 'owner' }),
-    );
-    expect(result.current.res).toBeNull();
-    act(() =>
-      result.current.store.dispatch({ type: 'setRole', role: 'friend' }),
-    );
-    expect(result.current.res).toBe('you');
-  });
-
-  it('reports ownership through useIsOwner', () => {
-    const { result } = renderHook(() => useIsOwner(), {
-      wrapper: wrap({ role: 'owner' }),
-    });
-    expect(result.current).toBe(true);
-  });
-});
-
-describe('the collaborative pot', () => {
-  it('adds a contribution', () => {
+describe('layout', () => {
+  it('toggles between grid and rows', () => {
     const { result } = renderHook(() => useStore(), { wrapper: wrap() });
-    act(() => result.current.dispatch({ type: 'contribute', amount: 50 }));
-    expect(result.current.state.pot).toBe(700);
+    expect(result.current.state.layout).toBe('grid');
+    act(() => result.current.dispatch({ type: 'toggleLayout' }));
+    expect(result.current.state.layout).toBe('rows');
   });
+});
 
-  it('never overshoots the target', () => {
-    const { result } = renderHook(() => useStore(), {
-      wrapper: wrap({ pot: 1590 }),
-    });
-    act(() => result.current.dispatch({ type: 'contribute', amount: 200 }));
-    expect(result.current.state.pot).toBe(1599);
+describe('theme', () => {
+  it('drives the dark class on the document', () => {
+    const { result } = renderHook(() => useStore(), { wrapper: wrap() });
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    act(() => result.current.dispatch({ type: 'setDark', dark: true }));
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    act(() => result.current.dispatch({ type: 'setDark', dark: false }));
   });
 });
 
 describe('toasts', () => {
   it('shows a message then clears it', () => {
     vi.useFakeTimers();
-    const { result } = renderHook(() => useStore(), { wrapper: wrap() });
-    act(() => result.current.flash('Réservé'));
-    expect(result.current.toast).toBe('Réservé');
-    act(() => vi.advanceTimersByTime(2600));
-    expect(result.current.toast).toBeNull();
-    vi.useRealTimers();
+    try {
+      const { result } = renderHook(() => useStore(), { wrapper: wrap() });
+      act(() => result.current.flash('Réservé'));
+      expect(result.current.toast).toBe('Réservé');
+      act(() => vi.advanceTimersByTime(2600));
+      expect(result.current.toast).toBeNull();
+    } finally {
+      // In a finally: a failed assertion would otherwise leak fake timers into
+      // every test after it, turning one failure into a cascade of timeouts.
+      vi.useRealTimers();
+    }
   });
 });

@@ -18,3 +18,183 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+
+  # The database half of the secrecy guarantee.
+  #
+  # `npm test` proves the UI does not render a reservation to the owner. This
+  # job proves the server will not send one — which is the half that actually
+  # holds, since a UI test passes just as happily when the secret is sitting in
+  # the client's memory waiting to be read out of the network tab.
+  #
+  # This must stay a REQUIRED check. Schema exposure is a dashboard toggle,
+  # outside version control, and the kind of thing that gets flipped during an
+  # incident and never flipped back.
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql and pgTAP
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client postgresql-16-pgtap
+
+      - name: Install pgTAP into the service container
+        # The extension files ship with the client package on the runner, but
+        # the server runs in the service container, so copy them across.
+        run: |
+          CID=$(docker ps --filter ancestor=pgvector/pgvector:pg16 --format '{{.ID}}')
+          docker cp /usr/share/postgresql/16/extension/. "$CID:/usr/share/postgresql/16/extension/"
+          psql -c 'create extension if not exists pgtap;'
+
+      - name: Stub the Supabase-provided auth schema
+        # Supabase supplies auth.users and auth.uid(); a bare Postgres does not.
+        # The stub mirrors their contract so the migrations run unmodified.
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema auth;
+          create table auth.users (
+            id uuid primary key default gen_random_uuid(),
+            email text,
+            raw_user_meta_data jsonb default '{}'::jsonb
+          );
+          create role anon;
+          create role authenticated;
+          create role service_role;
+          create function auth.uid() returns uuid language sql stable as $$
+            select nullif(current_setting('request.jwt.claims', true)::jsonb->>'sub','')::uuid; $$;
+          create function auth.role() returns text language sql stable as $$
+            select coalesce(current_setting('request.jwt.claims', true)::jsonb->>'role','anon'); $$;
+          SQL
+
+      - name: Apply migrations
+        # pg_cron is provided by Supabase and is not installable here; it is the
+        # only statement this job cannot exercise.
+        run: |
+          for f in supabase/migrations/*.sql; do
+            echo "-- $f"
+            sed 's/^\(create extension if not exists pg_cron.*\)/-- CI-SKIP: \1/' "$f" \
+              | psql -v ON_ERROR_STOP=1 -q
+          done
+
+      - name: Seed
+        run: psql -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
+
+      - name: Schema tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0001_schema.test.sql | tee /tmp/schema.tap
+      - name: Fail on any schema failure
+        run: '! grep -q "^not ok" /tmp/schema.tap'
+
+      - name: Secrecy tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0002_secrecy.test.sql | tee /tmp/secrecy.tap
+      - name: Fail on any secrecy failure
+        run: '! grep -q "^not ok" /tmp/secrecy.tap'
+
+      # The whitelist in log_event is the security-relevant part: without it a
+      # client can POST purchases in a loop and promote any product into every
+      # recommendation slate, while the model looks perfectly healthy doing it.
+      - name: Event log tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0003_events.test.sql | tee /tmp/events.tap
+      - name: Fail on any event failure
+        run: '! grep -q "^not ok" /tmp/events.tap'
+
+      # A notification is prose delivered to a person, which makes it the most
+      # natural place to accidentally announce someone's own present.
+      - name: Notification tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0006_notifications.test.sql | tee /tmp/notif.tap
+      - name: Fail on any notification failure
+        run: '! grep -q "^not ok" /tmp/notif.tap'
+
+      # Money: an unpaid intent must not inflate a pot, and Stripe's
+      # at-least-once delivery must not double-count. Both are asserted.
+      - name: Payment tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0005_payments.test.sql | tee /tmp/pay.tap
+      - name: Fail on any payment failure
+        run: '! grep -q "^not ok" /tmp/pay.tap'
+
+      # The invariance assertions here are the guard against the obvious,
+      # well-meaning change: "don't recommend things already reserved". That
+      # would turn the slate into a readable encoding of the reservation table.
+      - name: Recommendation tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0004_reco.test.sql | tee /tmp/reco.tap
+      - name: Fail on any recommendation failure
+        run: '! grep -q "^not ok" /tmp/reco.tap'
+
+      # CF: the shrinkage and the support floor are what stop a sparse system
+      # ranking one person's coincidence at the top of every slate.
+      - name: Collaborative filtering tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0007_cf.test.sql | tee /tmp/cf.tap
+      - name: Fail on any CF failure
+        run: '! grep -q "^not ok" /tmp/cf.tap'
+
+      # The harness exists to make DELETING a tier possible. Every recommender
+      # ships with an argument for why it should exist; the measurement that
+      # would show it should not is the rare part.
+      - name: Evaluation harness tests
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0008_evaluation.test.sql | tee /tmp/eval.tap
+      - name: Fail on any evaluation failure
+        run: '! grep -q "^not ok" /tmp/eval.tap'
+
+      # Deduplication quality caps recommendation quality: a product that
+      # fragments across rows splits its co-occurrence signal, and no pair
+      # reaches the support threshold. Measured here, before any recommender
+      # exists, because the symptom is indistinguishable from a model problem.
+      - name: Deduplication corpus
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/dedup-corpus.sql | tee /tmp/dedup.tap
+      - name: Fail on any dedup failure
+        run: '! grep -q "^not ok" /tmp/dedup.tap'
+
+      # A suite that silently stopped running would otherwise look identical to
+      # a suite that passed.
+      #
+      # NOTE the -A on every psql call above. Without it psql pads its output,
+      # every TAP line becomes " ok 1 - ..." with a leading space, and both
+      # `grep -c '^ok '` and `grep -q '^not ok'` match nothing — so the counts
+      # read zero AND the failure guards silently pass. The guards were inert
+      # until this was fixed.
+      - name: Assert every suite actually ran
+        run: |
+          test "$(grep -c '^ok ' /tmp/schema.tap)"  -ge 75
+          test "$(grep -c '^ok ' /tmp/secrecy.tap)" -ge 36
+          test "$(grep -c '^ok ' /tmp/events.tap)"  -ge 20
+          test "$(grep -c '^ok ' /tmp/reco.tap)"    -ge 21
+          test "$(grep -c '^ok ' /tmp/pay.tap)"     -ge 21
+          test "$(grep -c '^ok ' /tmp/notif.tap)"   -ge 16
+          test "$(grep -c '^ok ' /tmp/cf.tap)"      -ge 18
+          test "$(grep -c '^ok ' /tmp/eval.tap)"    -ge 15
+          test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
+
+  # The single worst mistake available in a Supabase app is shipping the
+  # service_role key to the browser: it bypasses RLS entirely.
+  bundle-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: No service_role key in the built bundle
+        run: |
+          if grep -rEl 'service_role|SUPABASE_SERVICE' dist/ 2>/dev/null; then
+            echo "::error::A service_role reference reached the client bundle."
+            exit 1
+          fi

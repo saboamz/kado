@@ -1,353 +1,284 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { PlaceholderArt } from '../components/Placeholder';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { Skeleton } from '../components/Skeleton';
-import { ADD_LISTS, ADD_METHODS, ANALYZE_MS, SCRAPED } from '../data/add';
+import { ADD_LISTS, ADD_METHODS } from '../data/add';
+import {
+  looksLikeUrl,
+  scrapeUrl,
+  type ScrapedProduct,
+} from '../api/products';
 import { stars } from '../data/fixtures';
 import { useStore } from '../state/store';
-import { chip, eyebrow, FONT, useTheme } from '../theme';
+import { Button, Card, Chip, Eyebrow, ScreenShell } from '../ui';
+
+/**
+ * The add flow.
+ *
+ * `addStep` was 0/1/2 in the global store. Steps 0 and 2 are now the two routes
+ * `/ajouter/lien` and `/ajouter/details`, which makes the filled-in form
+ * survive a reload and gives the browser Back button something sensible to do.
+ *
+ * Step 1 — "analysing" — deliberately did NOT become a route: it is a loading
+ * state of step 0, and a URL you can navigate to but that means nothing without
+ * the in-flight request would be a lie.
+ *
+ * The form draft (`link`, `addList`, `addPrio`) was global state for no reason;
+ * nothing outside this screen ever read it. It is local useState until React
+ * Hook Form lands with the real mutation in P6.
+ */
+/** Cents to a French price string. Never render raw cents to a user. */
+function formatPrice(p: ScrapedProduct | null): string {
+  if (!p || p.price_cents == null) return '';
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: p.currency || 'EUR',
+    maximumFractionDigits: p.price_cents % 100 === 0 ? 0 : 2,
+  }).format(p.price_cents / 100);
+}
 
 export function AddWish() {
-  const { state, dispatch, flash } = useStore();
-  const theme = useTheme();
-  const { t } = theme;
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const { flash } = useStore();
 
-  // The analysis is a fake network call; make sure it can't fire after the
-  // screen goes away, which would set state on an unmounted tree.
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const [link, setLink] = useState('');
+  const [list, setList] = useState(ADD_LISTS[0]);
+  const [prio, setPrio] = useState<1 | 2 | 3>(3);
+  const [scraped, setScraped] = useState<ScrapedProduct | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // The scrape can outlive the screen — someone pastes a link and hits back —
+  // and resolving onto an unmounted tree would warn and set state nowhere.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const onDetails = pathname.endsWith('/details');
+
+  const analysis = useMutation({
+    mutationFn: (url: string) => scrapeUrl(url),
+    onSuccess: (data) => {
+      if (!alive.current) return;
+      setScraped(data);
+      setError(null);
+      navigate('/ajouter/details');
+    },
+    onError: () => {
+      if (!alive.current) return;
+      // A link that cannot be read is an ordinary outcome — paywalls,
+      // JS-only pages, a typo — so it offers the free-text path rather than
+      // presenting itself as a failure of the app.
+      setError(
+        "Ce lien n'a pas pu être lu. Vous pouvez décrire l'envie vous-même.",
+      );
+    },
+  });
+
+  const loading = analysis.isPending;
 
   function analyze() {
-    clearTimeout(timer.current);
-    dispatch({ type: 'setAddStep', step: 1 });
-    timer.current = setTimeout(
-      () => dispatch({ type: 'setAddStep', step: 2 }),
-      ANALYZE_MS,
-    );
+    if (!looksLikeUrl(link)) {
+      setError('Cette adresse ne ressemble pas à un lien.');
+      return;
+    }
+    setError(null);
+    analysis.mutate(link);
   }
 
-  const loading = state.addStep === 1;
-
   return (
-    <div style={{ padding: '66px 20px 120px', animation: 'kFadeUp .4s both' }}>
+    <ScreenShell>
       <ScreenTitle
-        margin="0 0 22px"
         trailing={
-          <button
-            onClick={() => dispatch({ type: 'go', screen: 'home' })}
+          <Button
+            variant="secondary"
             aria-label="Fermer"
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: '50%',
-              background: t.surface,
-              color: t.fg2,
-              font: `400 16px/1 ${FONT.sans}`,
-            }}
+            onClick={() => navigate('/')}
+            className="h-8.5 w-8.5 flex-none rounded-full px-0 text-lg font-normal"
           >
             ×
-          </button>
+          </Button>
         }
       >
         Ajouter une envie
       </ScreenTitle>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-          height: 50,
-          padding: '0 14px',
-          borderRadius: 16,
-          border: `1.5px solid ${theme.accent}`,
-          background: t.bg,
-          marginBottom: 12,
-        }}
-      >
-        <span style={{ font: `400 12px/1 ${FONT.mono}`, color: theme.accent }}>
-          URL
-        </span>
-        <input
-          value={state.link}
-          onChange={(e) => dispatch({ type: 'setLink', link: e.target.value })}
-          placeholder="Collez un lien Amazon, Apple…"
-          aria-label="Lien du produit"
-          style={{
-            flex: 1,
-            border: 0,
-            outline: 0,
-            background: 'none',
-            font: `400 14.5px/1 ${FONT.sans}`,
-            color: t.fg,
-          }}
-        />
-      </div>
+      {!onDetails && (
+        <>
+          <div className="mb-3 flex h-12.5 items-center gap-2.5 rounded-xl border-[1.5px] border-accent bg-bg px-3.5 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent">
+            <span className="font-mono text-sm leading-none text-accent">
+              URL
+            </span>
+            <input
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="Collez un lien Amazon, Apple…"
+              aria-label="Lien du produit"
+              // The ring is on the wrapper, so the input itself must not draw
+              // a second one inside it.
+              className="min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg3"
+            />
+          </div>
 
-      <button
-        onClick={analyze}
-        disabled={loading}
-        style={{
-          width: '100%',
-          height: 50,
-          borderRadius: 16,
-          font: `600 15px/1 ${FONT.sans}`,
-          transition: 'transform .18s',
-          background: loading ? t.surface : t.fg,
-          color: loading ? t.fg2 : t.bg,
-          cursor: loading ? 'progress' : 'pointer',
-        }}
-      >
-        {loading ? 'Analyse du lien…' : 'Récupérer les informations'}
-      </button>
+          <Button
+            block
+            size="lg"
+            variant="secondary"
+            onClick={analyze}
+            disabled={loading}
+            className="bg-fg text-bg hover:bg-fg/90 disabled:bg-surface disabled:text-fg2"
+          >
+            {loading ? 'Analyse du lien…' : 'Récupérer les informations'}
+          </Button>
+
+          {error && (
+            // role="alert" so the failure is announced: it is the only
+            // feedback, and a sighted user sees it appear while a screen
+            // reader user would otherwise just wait.
+            <p role="alert" className="mt-3 text-pretty text-sm text-accent">
+              {error}
+            </p>
+          )}
+        </>
+      )}
 
       {loading && (
-        <div
+        <Card
           role="status"
           aria-live="polite"
           aria-label="Analyse du lien en cours"
-          style={{
-            marginTop: 20,
-            padding: 14,
-            borderRadius: 20,
-            background: t.surface,
-            display: 'flex',
-            gap: 13,
-            alignItems: 'center',
-          }}
+          radius="lg"
+          className="mt-5 flex items-center gap-3.5"
         >
-          <Skeleton style={{ width: 74, height: 74, borderRadius: 15 }} />
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
+          <Skeleton className="h-[74px] w-[74px] flex-none rounded-xl" />
+          <div className="flex flex-1 flex-col gap-2">
             {['78%', '46%', '60%'].map((w) => (
               <Skeleton
                 key={w}
-                style={{ height: 12, width: w, borderRadius: 6 }}
+                className="h-3 rounded-sm"
+                // Width varies per row; Tailwind cannot build a class from a
+                // runtime value, so it stays a style prop.
+                style={{ width: w }}
               />
             ))}
           </div>
-        </div>
+        </Card>
       )}
 
-      {state.addStep === 2 && (
-        <div style={{ marginTop: 20, animation: 'kPop .4s both' }}>
-          <div
-            style={{
-              padding: 14,
-              borderRadius: 20,
-              background: t.surface,
-              display: 'flex',
-              gap: 13,
-              alignItems: 'center',
-            }}
-          >
+      {onDetails && (
+        <div className="motion-safe:animate-[kPop_.4s_both]">
+          <Card radius="xl" className="flex items-center gap-3.5">
             <PlaceholderArt
               label="PHOTO"
-              style={{
-                width: 74,
-                height: 74,
-                flex: 'none',
-                borderRadius: 15,
-              }}
+              className="h-[74px] w-[74px] flex-none rounded-xl"
             />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ font: `600 14.5px/1.25 ${FONT.sans}`, color: t.fg }}>
-                {SCRAPED.name}
-              </div>
-              <div
-                style={{
-                  font: `500 13px/1 ${FONT.mono}`,
-                  color: t.fg,
-                  marginTop: 6,
-                }}
-              >
-                {SCRAPED.price}
-              </div>
-              <div
-                style={{
-                  font: `400 11px/1 ${FONT.sans}`,
-                  color: t.fg3,
-                  marginTop: 6,
-                }}
-              >
-                {SCRAPED.source}
-              </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-base leading-snug font-semibold text-fg">
+                {scraped?.title ?? '—'}
+              </p>
+              <p className="mt-1.5 font-mono text-[0.8125rem] leading-none font-medium text-fg">
+                {formatPrice(scraped)}
+              </p>
+              <p className="mt-1.5 text-xs leading-none text-fg3">
+                {scraped?.source ?? ''}
+              </p>
             </div>
-          </div>
+          </Card>
 
-          <div
-            style={{
-              marginTop: 16,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 10,
-            }}
-          >
+          <div className="mt-4 flex flex-col gap-2.5">
             <div>
-              <div style={{ ...eyebrow(theme), marginBottom: 7 }}>Liste</div>
-              <div
-                role="group"
-                aria-label="Liste"
-                style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}
-              >
+              <Eyebrow className="mb-2">Liste</Eyebrow>
+              <div role="group" aria-label="Liste" className="flex flex-wrap gap-2">
                 {ADD_LISTS.map((label) => (
-                  <button
+                  <Chip
                     key={label}
-                    onClick={() => dispatch({ type: 'setAddList', list: label })}
-                    aria-pressed={state.addList === label}
-                    style={chip(theme, state.addList === label)}
+                    selected={list === label}
+                    onClick={() => setList(label)}
                   >
                     {label}
-                  </button>
+                  </Chip>
                 ))}
               </div>
             </div>
 
             <div>
-              <div style={{ ...eyebrow(theme), marginBottom: 7 }}>Priorité</div>
-              <div
-                role="group"
-                aria-label="Priorité"
-                style={{ display: 'flex', gap: 7 }}
-              >
+              <Eyebrow className="mb-2">Priorité</Eyebrow>
+              <div role="group" aria-label="Priorité" className="flex gap-2">
                 {([1, 2, 3] as const).map((n) => (
-                  <button
+                  <Chip
                     key={n}
-                    onClick={() => dispatch({ type: 'setAddPrio', prio: n })}
-                    aria-pressed={state.addPrio === n}
+                    selected={prio === n}
                     aria-label={`Priorité ${n} sur 3`}
-                    style={chip(theme, state.addPrio === n)}
+                    onClick={() => setPrio(n)}
                   >
                     {stars(n)}
-                  </button>
+                  </Chip>
                 ))}
               </div>
             </div>
 
             <div>
-              <div style={{ ...eyebrow(theme), marginBottom: 7 }}>
-                Description
-              </div>
-              <div
-                style={{
-                  padding: '13px 14px',
-                  borderRadius: 15,
-                  background: t.surface,
-                  font: `400 13.5px/1.5 ${FONT.sans}`,
-                  color: t.fg2,
-                  minHeight: 66,
-                }}
-              >
-                {SCRAPED.desc}
-              </div>
+              <Eyebrow className="mb-2">Description</Eyebrow>
+              <Card radius="lg" className="min-h-16.5 px-3.5 py-3.5">
+                <p className="text-[0.84375rem] leading-relaxed text-fg2">
+                  {scraped?.description ?? ''}
+                </p>
+              </Card>
             </div>
           </div>
 
-          <button
+          <Button
+            block
+            size="lg"
+            className="mt-4.5"
             onClick={() => {
-              dispatch({ type: 'go', screen: 'list' });
-              dispatch({ type: 'setAddStep', step: 0 });
-              flash(`${SCRAPED.name} ajoutés à ${state.addList}`);
-            }}
-            style={{
-              width: '100%',
-              height: 52,
-              marginTop: 18,
-              borderRadius: 17,
-              background: theme.accent,
-              color: '#fff',
-              font: `600 15.5px/1 ${FONT.sans}`,
-              boxShadow: `0 10px 24px -12px ${theme.accentGlow}`,
+              flash(`${scraped?.title ?? '—'} ajoutés à ${list}`);
+              navigate('/u/sophie/listes/anniversaire');
             }}
           >
             Ajouter à ma liste
-          </button>
+          </Button>
         </div>
       )}
 
-      {state.addStep === 0 && (
-        <div style={{ marginTop: 26 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              marginBottom: 20,
-            }}
-          >
-            <div style={{ flex: 1, height: 1, background: t.line }} />
-            <span
-              style={{
-                font: `400 10px/1 ${FONT.mono}`,
-                color: t.fg3,
-                letterSpacing: '.1em',
-              }}
-            >
+      {!onDetails && !loading && (
+        <div className="mt-6.5">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-line" />
+            <span className="font-mono text-xs leading-none tracking-eyebrow text-fg3">
               OU
             </span>
-            <div style={{ flex: 1, height: 1, background: t.line }} />
+            <div className="h-px flex-1 bg-line" />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="flex flex-col gap-2">
             {ADD_METHODS.map((m) => (
               <button
                 key={m.title}
                 onClick={() => flash('Bientôt disponible')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 13,
-                  padding: 15,
-                  borderRadius: 18,
-                  background: t.surface,
-                  textAlign: 'left',
-                  width: '100%',
-                }}
+                className="flex w-full items-center gap-3.5 rounded-2xl bg-surface p-4 text-left transition-colors hover:bg-chip focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 <span
                   aria-hidden
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 11,
-                    background: t.bg,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    font: `600 13px/1 ${FONT.mono}`,
-                    color: theme.accent,
-                  }}
+                  className="flex h-8.5 w-8.5 flex-none items-center justify-center rounded-lg bg-bg font-mono text-[0.8125rem] leading-none font-semibold text-accent"
                 >
                   {m.icon}
                 </span>
-                <span style={{ flex: 1 }}>
-                  <span
-                    style={{
-                      display: 'block',
-                      font: `600 13.5px/1.2 ${FONT.sans}`,
-                      color: t.fg,
-                    }}
-                  >
+                <span className="flex-1">
+                  <span className="block text-[0.84375rem] leading-snug font-semibold text-fg">
                     {m.title}
                   </span>
-                  <span
-                    style={{
-                      display: 'block',
-                      font: `400 12px/1.35 ${FONT.sans}`,
-                      color: t.fg2,
-                      marginTop: 3,
-                    }}
-                  >
+                  <span className="mt-0.5 block text-sm leading-snug text-fg2">
                     {m.sub}
                   </span>
                 </span>
-                <span aria-hidden style={{ color: t.fg3, fontSize: 15 }}>
+                <span aria-hidden className="text-[0.9375rem] text-fg3">
                   ›
                 </span>
               </button>
@@ -355,6 +286,6 @@ export function AddWish() {
           </div>
         </div>
       )}
-    </div>
+    </ScreenShell>
   );
 }

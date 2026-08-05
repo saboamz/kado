@@ -1,18 +1,28 @@
 import type { CSSProperties } from 'react';
-import { useTheme } from '../theme';
 
-/** Shimmering placeholder shown while the link is being analysed. */
-export function Skeleton({ style }: { style?: CSSProperties }) {
-  const { t } = useTheme();
+/**
+ * Shimmering placeholder shown while the link is being analysed.
+ *
+ * First component converted to Tailwind. It reads its colours from the CSS
+ * custom properties in src/styles/tokens.css rather than from useTheme(), so
+ * it re-themes without a React render — and, unlike the inline-styled version,
+ * it no longer needs to be inside a ThemeProvider at all.
+ *
+ * `style` remains for values Tailwind cannot express because they are computed
+ * at runtime (a percentage width from a map, say). Prefer `className`.
+ */
+export function Skeleton({
+  className = '',
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
   return (
     <div
       aria-hidden
-      style={{
-        background: `linear-gradient(90deg,${t.chip} 8%,${t.bg} 20%,${t.chip} 33%)`,
-        backgroundSize: '260px 100%',
-        animation: 'kShimmer 1.1s linear infinite',
-        ...style,
-      }}
+      className={`animate-[kShimmer_1.1s_linear_infinite] bg-[linear-gradient(90deg,var(--color-chip)_8%,var(--color-bg)_20%,var(--color-chip)_33%)] bg-[length:260px_100%] ${className}`}
+      style={style}
     />
   );
 }
