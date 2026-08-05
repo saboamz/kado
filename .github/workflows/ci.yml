@@ -114,6 +114,13 @@ jobs:
       - name: Fail on any event failure
         run: '! grep -q "^not ok" /tmp/events.tap'
 
+      # A notification is prose delivered to a person, which makes it the most
+      # natural place to accidentally announce someone's own present.
+      - name: Notification tests
+        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0006_notifications.test.sql | tee /tmp/notif.tap
+      - name: Fail on any notification failure
+        run: '! grep -q "^not ok" /tmp/notif.tap'
+
       # Money: an unpaid intent must not inflate a pot, and Stripe's
       # at-least-once delivery must not double-count. Both are asserted.
       - name: Payment tests
@@ -147,6 +154,7 @@ jobs:
           test "$(grep -c '^ok ' /tmp/events.tap)"  -ge 20
           test "$(grep -c '^ok ' /tmp/reco.tap)"    -ge 21
           test "$(grep -c '^ok ' /tmp/pay.tap)"     -ge 21
+          test "$(grep -c '^ok ' /tmp/notif.tap)"   -ge 16
           test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
 
   # The single worst mistake available in a Supabase app is shipping the
