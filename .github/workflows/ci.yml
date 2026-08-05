@@ -97,12 +97,12 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
 
       - name: Schema tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0001_schema.test.sql | tee /tmp/schema.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0001_schema.test.sql | tee /tmp/schema.tap
       - name: Fail on any schema failure
         run: '! grep -q "^not ok" /tmp/schema.tap'
 
       - name: Secrecy tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0002_secrecy.test.sql | tee /tmp/secrecy.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0002_secrecy.test.sql | tee /tmp/secrecy.tap
       - name: Fail on any secrecy failure
         run: '! grep -q "^not ok" /tmp/secrecy.tap'
 
@@ -110,21 +110,21 @@ jobs:
       # client can POST purchases in a loop and promote any product into every
       # recommendation slate, while the model looks perfectly healthy doing it.
       - name: Event log tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0003_events.test.sql | tee /tmp/events.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0003_events.test.sql | tee /tmp/events.tap
       - name: Fail on any event failure
         run: '! grep -q "^not ok" /tmp/events.tap'
 
       # A notification is prose delivered to a person, which makes it the most
       # natural place to accidentally announce someone's own present.
       - name: Notification tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0006_notifications.test.sql | tee /tmp/notif.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0006_notifications.test.sql | tee /tmp/notif.tap
       - name: Fail on any notification failure
         run: '! grep -q "^not ok" /tmp/notif.tap'
 
       # Money: an unpaid intent must not inflate a pot, and Stripe's
       # at-least-once delivery must not double-count. Both are asserted.
       - name: Payment tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0005_payments.test.sql | tee /tmp/pay.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0005_payments.test.sql | tee /tmp/pay.tap
       - name: Fail on any payment failure
         run: '! grep -q "^not ok" /tmp/pay.tap'
 
@@ -132,14 +132,14 @@ jobs:
       # well-meaning change: "don't recommend things already reserved". That
       # would turn the slate into a readable encoding of the reservation table.
       - name: Recommendation tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0004_reco.test.sql | tee /tmp/reco.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0004_reco.test.sql | tee /tmp/reco.tap
       - name: Fail on any recommendation failure
         run: '! grep -q "^not ok" /tmp/reco.tap'
 
       # CF: the shrinkage and the support floor are what stop a sparse system
       # ranking one person's coincidence at the top of every slate.
       - name: Collaborative filtering tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0007_cf.test.sql | tee /tmp/cf.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0007_cf.test.sql | tee /tmp/cf.tap
       - name: Fail on any CF failure
         run: '! grep -q "^not ok" /tmp/cf.tap'
 
@@ -147,7 +147,7 @@ jobs:
       # ships with an argument for why it should exist; the measurement that
       # would show it should not is the rare part.
       - name: Evaluation harness tests
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0008_evaluation.test.sql | tee /tmp/eval.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/0008_evaluation.test.sql | tee /tmp/eval.tap
       - name: Fail on any evaluation failure
         run: '! grep -q "^not ok" /tmp/eval.tap'
 
@@ -156,12 +156,18 @@ jobs:
       # reaches the support threshold. Measured here, before any recommender
       # exists, because the symptom is indistinguishable from a model problem.
       - name: Deduplication corpus
-        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/dedup-corpus.sql | tee /tmp/dedup.tap
+        run: psql -XAtv ON_ERROR_STOP=1 -f supabase/tests/dedup-corpus.sql | tee /tmp/dedup.tap
       - name: Fail on any dedup failure
         run: '! grep -q "^not ok" /tmp/dedup.tap'
 
       # A suite that silently stopped running would otherwise look identical to
       # a suite that passed.
+      #
+      # NOTE the -A on every psql call above. Without it psql pads its output,
+      # every TAP line becomes " ok 1 - ..." with a leading space, and both
+      # `grep -c '^ok '` and `grep -q '^not ok'` match nothing — so the counts
+      # read zero AND the failure guards silently pass. The guards were inert
+      # until this was fixed.
       - name: Assert every suite actually ran
         run: |
           test "$(grep -c '^ok ' /tmp/schema.tap)"  -ge 75
