@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -9,6 +10,7 @@ import {
 import type { Session } from '@supabase/supabase-js';
 import { useQuery } from '@tanstack/react-query';
 import { supabase, hasBackend } from '../lib/supabase';
+import { setMockViewer } from '../lib/mockTransport';
 import { qk } from '../api/queryKeys';
 
 export type Viewer = {
@@ -26,6 +28,29 @@ type SessionValue = {
 };
 
 const SessionCtx = createContext<SessionValue | null>(null);
+
+/**
+ * Who you are when running against fixtures.
+ *
+ * Without a backend there is no sign-in, so there would be no viewer at all —
+ * and a null viewer is a *friend*, which meant the fixture app could never
+ * show the owner's view and its secrecy behaviour went untested by anyone
+ * clicking around. This gives the fixture path an identity that matches the
+ * seed, so `/u/sophie/...` is genuinely your own list.
+ *
+ * Overridable with `?as=marc` to look at the same list as a friend, which is
+ * the manual equivalent of the two viewers in the test suite.
+ */
+function devViewer(): Viewer {
+  const as =
+    new URLSearchParams(window.location.search).get('as') ?? 'sophie';
+  return {
+    id: `dev-${as}`,
+    handle: as,
+    displayName: as === 'sophie' ? 'Sophie Marchand' : as,
+    onboarded: true,
+  };
+}
 
 /**
  * The signed-in user, from Supabase Auth.
@@ -81,20 +106,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     staleTime: 60_000,
   });
 
+  const viewer = useMemo<Viewer | null>(() => {
+    if (!hasBackend) return devViewer();
+    if (!profile) return null;
+    return {
+      id: profile.id,
+      handle: profile.handle,
+      displayName: profile.display_name,
+      onboarded: profile.onboarded_at !== null,
+    };
+  }, [profile]);
+
+  // Tell the mock transport who is asking, so its 42704 refusal fires for the
+  // same person the UI believes is signed in. Layout effect, not passive:
+  // queries go out during the children's first commit.
+  useLayoutEffect(() => {
+    if (!hasBackend) setMockViewer(viewer?.handle ?? null);
+  }, [viewer]);
+
   const value = useMemo<SessionValue>(
-    () => ({
-      session,
-      viewer: profile
-        ? {
-            id: profile.id,
-            handle: profile.handle,
-            displayName: profile.display_name,
-            onboarded: profile.onboarded_at !== null,
-          }
-        : null,
-      loading,
-    }),
-    [session, profile, loading],
+    () => ({ session, viewer, loading }),
+    [session, viewer, loading],
   );
 
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
@@ -131,6 +163,18 @@ export function StubSessionProvider({
   viewer: Viewer | null;
   children: ReactNode;
 }) {
+  // Keep the mock transport's idea of "who is asking" in step with the stub,
+  // so its 42704 refusal fires for the same viewer the UI thinks is signed in.
+  // Without this a test could render as the owner and still be served a
+  // friend's data, and the assertion would pass for the wrong reason.
+  //
+  // Layout effect rather than useEffect: queries fire during the children's
+  // first commit, and a passive effect would run after that, so the first
+  // request of a test would go out under the previous viewer.
+  useLayoutEffect(() => {
+    if (!hasBackend) setMockViewer(viewer?.handle ?? null);
+  }, [viewer]);
+
   const value = useMemo<SessionValue>(
     () => ({ session: null, viewer, loading: false }),
     [viewer],

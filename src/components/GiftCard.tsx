@@ -1,16 +1,20 @@
 import { Link } from 'react-router-dom';
 import { PlaceholderArt } from './Placeholder';
-import type { Gift, Role } from '../data/types';
+import type { Gift, Reserver } from '../data/types';
 import { stars } from '../data/fixtures';
-import { useReservation } from '../state/store';
 import { cn } from '../ui';
 
 /**
  * A gift in a wishlist.
  *
- * The reservation flag comes from useReservation, which returns null for the
- * owner. That is the whole enforcement: there is no `owner &&` guard here to
- * forget, because an owner is never given a value to render.
+ * `reservation` is null for an owner, because the server never told the list
+ * screen otherwise. That is the whole enforcement: there is no `owner &&`
+ * guard here to forget, because an owner is never given a value to render.
+ *
+ * Taking it as a prop rather than calling a hook is what lets the list fetch
+ * reservation state once for every card instead of once per card — and, more
+ * to the point, means there is exactly one place that decides what a viewer is
+ * allowed to know.
  *
  * A Link rather than a button: opening a gift is navigation, so middle-click,
  * cmd-click and "open in new tab" should all work.
@@ -18,16 +22,14 @@ import { cn } from '../ui';
 export function GiftCard({
   gift,
   grid,
-  role,
+  reservation,
   to,
 }: {
   gift: Gift;
   grid: boolean;
-  role: Role;
+  reservation: Reserver | null;
   to: string;
 }) {
-  const reservation = useReservation(gift.id, role);
-
   const flag = gift.pot
     ? 'Cagnotte'
     : reservation === 'you'

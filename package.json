@@ -36,7 +36,6 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^17.9.0",
     "jsdom": "^25.0.1",
-    "msw": "^2.15.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",

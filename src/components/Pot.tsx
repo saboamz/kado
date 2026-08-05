@@ -1,29 +1,36 @@
-import { euros, POT_TOTAL } from '../data/fixtures';
-import type { Role } from '../data/types';
-import { usePotState, useStore } from '../state/store';
+import { useStore } from '../state/store';
+import { usePot } from '../api/useReservations';
 import { Chip, Progress } from '../ui';
 import { PlaceholderArt } from './Placeholder';
 
-const AMOUNTS = [20, 50, 100, 200];
+const AMOUNTS_CENTS = [2000, 5000, 10000, 20000];
+
+const euros = (cents: number) =>
+  new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  }).format(cents / 100);
 
 /**
  * Collaborative gift pot.
  *
  * Contributions are anonymous by the same rule as reservations: the pot shows
- * a total and an avatar count, never who gave what.
+ * a total and a bucketed participant count, never who gave what.
  *
  * This renders nothing at all for an owner — not an empty section, nothing —
- * because usePotState hands them null rather than numbers to hide. The caller
- * no longer needs a `!owner &&` guard for correctness.
+ * because the server refuses to describe the pot to them and usePot therefore
+ * hands back null. The caller needs no `!owner &&` guard, which is the point:
+ * a guard is something a later edit can invert.
  */
-export function Pot({ role }: { role: Role }) {
-  const { dispatch } = useStore();
-  const pot = usePotState(role);
+export function Pot({ itemId }: { itemId: string }) {
+  const { state, dispatch } = useStore();
+  const { pot } = usePot(itemId);
 
   if (!pot) return null;
 
-  const pct = Math.min(100, Math.round((pot.total / POT_TOTAL) * 100));
-  const remaining = POT_TOTAL - pot.total;
+  const pct = Math.min(100, Math.round((pot.raised_cents / pot.target_cents) * 100));
+  const remaining = Math.max(0, pot.target_cents - pot.raised_cents);
 
   return (
     <section
@@ -32,16 +39,16 @@ export function Pot({ role }: { role: Role }) {
     >
       <div className="mb-3 flex items-baseline justify-between">
         <span className="text-2xl leading-none font-bold tracking-tight text-fg">
-          {euros(pot.total)} récoltés
+          {euros(pot.raised_cents)} récoltés
         </span>
         <span className="font-mono text-sm leading-none text-fg2">
-          sur {euros(POT_TOTAL)}
+          sur {euros(pot.target_cents)}
         </span>
       </div>
 
       <Progress
-        value={pot.total}
-        max={POT_TOTAL}
+        value={pot.raised_cents}
+        max={pot.target_cents}
         label={`Cagnotte à ${pct} %`}
         className="h-2"
       />
@@ -58,6 +65,10 @@ export function Pot({ role }: { role: Role }) {
           ))}
         </div>
         <span className="text-sm leading-tight text-fg2">
+          {/*
+            A bucket ('2-5'), not a number. An exact count that ticks upward is
+            a channel of its own, and the server never sends one.
+          */}
           {pot.contributors} amis participent · il reste {euros(remaining)}
         </span>
       </div>
@@ -67,13 +78,15 @@ export function Pot({ role }: { role: Role }) {
         aria-label="Montant de la participation"
         className="mt-4 flex flex-wrap gap-2"
       >
-        {AMOUNTS.map((v) => (
+        {AMOUNTS_CENTS.map((cents) => (
           <Chip
-            key={v}
-            selected={pot.contrib === v}
-            onClick={() => dispatch({ type: 'setContrib', amount: v })}
+            key={cents}
+            selected={state.contrib * 100 === cents}
+            onClick={() =>
+              dispatch({ type: 'setContrib', amount: cents / 100 })
+            }
           >
-            {euros(v)}
+            {euros(cents)}
           </Chip>
         ))}
       </div>

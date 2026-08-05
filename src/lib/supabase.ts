@@ -31,7 +31,7 @@ if (!hasBackend && import.meta.env.PROD) {
  * expose. `.rpc()` is the only door, and the functions behind it refuse an
  * owner asking about their own list.
  */
-export const supabase = createClient<Database>(
+const client = createClient<Database>(
   url ?? 'http://localhost:54321',
   anonKey ?? 'anon-key-placeholder',
   {
@@ -45,3 +45,30 @@ export const supabase = createClient<Database>(
     },
   },
 );
+
+/**
+ * Without a configured project, `.rpc()` is answered by the mock transport.
+ *
+ * The point is that src/api/ never learns which one replied: it awaits a
+ * `{ data, error }` either way, and an owner gets the same 42704 refusal from
+ * both. Branching in the UI instead would mean keeping a client-side owner
+ * check alive for the fixture case, which is the pattern the private schema
+ * exists to delete.
+ */
+if (!hasBackend) {
+  const rpc = client.rpc.bind(client);
+  // @ts-expect-error — deliberately narrowing a heavily-overloaded signature.
+  client.rpc = async (name: string, args: Record<string, unknown>) => {
+    const { mockRpc } = await import('./mockTransport');
+    const fn = mockRpc[name as keyof typeof mockRpc];
+    if (!fn) return rpc(name as never, args as never);
+    try {
+      return { data: fn(args as never) ?? null, error: null };
+    } catch (e) {
+      const err = e as Error & { code?: string };
+      return { data: null, error: { code: err.code, message: err.message } };
+    }
+  };
+}
+
+export const supabase = client;

@@ -148,60 +148,14 @@ export function useViewerRole(ownerHandle: string | undefined): Role {
   return ownerHandle === viewer.handle ? 'owner' : 'friend';
 }
 
-/**
- * The one way to ask "is this gift reserved?".
+/*
+ * useReservation, useReservedCount and usePotState lived here.
  *
- * For an owner this ALWAYS returns null — not "reserved by someone unnamed",
- * but nothing at all. The owner's UI cannot render a reservation state it is
- * never handed. Reading `state.reserved` directly in a screen defeats this;
- * don't.
+ * They filtered data the browser already held — correct, and never a
+ * guarantee: the secret sat in the store either way, one devtools inspection
+ * from being read. Their replacements in src/api/useReservations.ts ask a
+ * server that refuses to send it, so there is nothing left to filter.
+ *
+ * They are deleted rather than deprecated on purpose. A working selector with
+ * the right-looking shape is the thing a future screen copies.
  */
-export function useReservation(
-  giftId: string,
-  role: Role,
-): Reserver | null {
-  const { state } = useStore();
-  if (role === 'owner') return null;
-  return state.reserved[giftId] ?? null;
-}
-
-/**
- * How many gifts in view are taken — null for an owner.
- *
- * Wishlist.tsx used to compute this inline as
- * `owner ? '6 envies' : `6 envies · ${Object.keys(state.reserved).length}``,
- * which reads state.reserved directly and is therefore exactly the kind of
- * guard the selector pattern exists to eliminate: correct today, one careless
- * edit from leaking. Returning null instead of a number means a caller cannot
- * render the count it was never handed.
- */
-export function useReservedCount(role: Role): number | null {
-  const { state } = useStore();
-  if (role === 'owner') return null;
-  return Object.keys(state.reserved).length;
-}
-
-/**
- * State of the collaborative pot — null for an owner.
- *
- * The pot is the loudest secret in the app: "650 € / 1 599 €" tells the owner
- * outright that a gift is being bought for them. Pot.tsx guarded this by only
- * ever being rendered under `showPot = !!gift.pot && !owner`, and read
- * state.reserved directly for the contributor count.
- *
- * Both are now behind this selector. In P5 the same shape comes from a
- * SECURITY DEFINER RPC that raises for an owner, so the client never receives
- * pot state at all — this hook is where that swap lands.
- */
-export function usePotState(
-  role: Role,
-): { total: number; contributors: number; contrib: number } | null {
-  const { state } = useStore();
-  if (role === 'owner') return null;
-  return {
-    total: state.pot,
-    // Count only. Naming contributors would defeat the anonymity.
-    contributors: Object.keys(state.reserved).length + 2,
-    contrib: state.contrib,
-  };
-}

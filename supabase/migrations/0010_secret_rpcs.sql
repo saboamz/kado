@@ -224,6 +224,52 @@ comment on function public.get_pot_state(uuid) is
   'Pot state for a friend. Contributor count is bucketed rather than exact: an exact number that ticks up is itself a channel.';
 
 -- ---------------------------------------------------------------------------
+-- Write: contribute to a pot
+-- ---------------------------------------------------------------------------
+--
+-- Records an intent to contribute. Real money arrives in P8: this inserts a
+-- `pending` row, and only the Stripe webhook moves it to `captured`, which is
+-- the state get_pot_state() sums. So a contribution that is never paid for
+-- cannot inflate the total.
+create or replace function public.contribute(
+  p_item uuid,
+  p_amount_cents integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid   uuid := (select auth.uid());
+  v_list  uuid;
+  v_pot   uuid;
+begin
+  if v_uid is null or p_amount_cents <= 0 then
+    raise exception 'not found' using errcode = '42704';
+  end if;
+
+  select wi.wishlist_id into v_list from public.wish_items wi where wi.id = p_item;
+  if v_list is null then
+    raise exception 'not found' using errcode = '42704';
+  end if;
+
+  perform private.assert_not_owner(v_list, v_uid);
+
+  select id into v_pot from private.pots where wish_item_id = p_item and state = 'open';
+  if v_pot is null then
+    raise exception 'not found' using errcode = '42704';
+  end if;
+
+  insert into private.contributions (pot_id, contributor_id, amount_cents)
+  values (v_pot, v_uid, p_amount_cents);
+end;
+$$;
+
+comment on function public.contribute(uuid, integer) is
+  'Records a pending contribution. Only a captured payment counts toward the total, so an unpaid intent cannot inflate it.';
+
+-- ---------------------------------------------------------------------------
 -- Grants
 -- ---------------------------------------------------------------------------
 -- `public` in a GRANT means "every role", which would include anon. Revoke
@@ -232,9 +278,11 @@ revoke all on function public.list_reservation_state(uuid) from public;
 revoke all on function public.reserve_item(uuid, smallint, text) from public;
 revoke all on function public.release_item(uuid) from public;
 revoke all on function public.get_pot_state(uuid) from public;
+revoke all on function public.contribute(uuid, integer) from public;
 revoke all on function private.assert_not_owner(uuid, uuid) from public;
 
 grant execute on function public.list_reservation_state(uuid) to authenticated;
 grant execute on function public.reserve_item(uuid, smallint, text) to authenticated;
 grant execute on function public.release_item(uuid) to authenticated;
 grant execute on function public.get_pot_state(uuid) to authenticated;
+grant execute on function public.contribute(uuid, integer) to authenticated;

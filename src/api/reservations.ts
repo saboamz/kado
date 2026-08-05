@@ -112,6 +112,30 @@ export async function releaseItem(itemId: string) {
 }
 
 /**
+ * Chip into a pot.
+ *
+ * Cents, like every other amount that crosses this boundary: a float here
+ * would eventually round a contribution and leave the pot total disagreeing
+ * with the payment ledger.
+ *
+ * Real payments arrive in P8 (Stripe PaymentIntents, with the contribution
+ * only counting once the webhook captures it). This is the shape that call
+ * will take.
+ */
+export async function contributeToPot(itemId: string, amountCents: number) {
+  const { error } = await supabase.rpc('contribute', {
+    p_item: itemId,
+    p_amount_cents: amountCents,
+  });
+  if (error) throw error;
+}
+
+/** The pot query for one item is stale after a contribution. */
+export function invalidatePot(qc: QueryClient, itemId: string) {
+  return qc.invalidateQueries({ queryKey: qk.pot.ofItem(itemId) });
+}
+
+/**
  * After a reservation changes, only the list's own reservation state is stale.
  *
  * Deliberately does NOT invalidate the wishlist itself: nothing in

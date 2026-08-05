@@ -348,6 +348,14 @@ export type Database = {
           mine_cents: number;
         }[];
       };
+      /**
+       * Chip into a pot. Cents, never a float.
+       * Raises 42704 for an owner and for an item with no pot alike.
+       */
+      contribute: {
+        Args: { p_item: string; p_amount_cents: number };
+        Returns: void;
+      };
       can_view_wishlist: {
         Args: { list: string; viewer: string };
         Returns: boolean;

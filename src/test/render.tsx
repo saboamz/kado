@@ -11,8 +11,6 @@ import {
   StubSessionProvider,
   type Viewer,
 } from '../auth/SessionContext';
-import { server } from './msw/server';
-import { resetDb } from './msw/handlers';
 
 /**
  * The two viewers every screen test needs.
@@ -139,19 +137,4 @@ function makeTestQueryClient() {
       mutations: { retry: false },
     },
   });
-}
-
-/**
- * Opt a suite into the mock PostgREST server.
- *
- * Call at the top of a describe block. `session` picks whose eyes you are
- * looking through — pass 'sophie' to be the list owner, anything else to be a
- * friend — which is how a test asks the *server* to enforce the secrecy rule
- * rather than asking the component to hide something it was given.
- */
-export function useMockApi(session: string = 'marc') {
-  beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-  beforeEach(() => resetDb({ sessionHandle: session }));
-  afterEach(() => server.resetHandlers());
-  afterAll(() => server.close());
 }

@@ -1,15 +1,28 @@
 import { useLocation, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { BackButton } from '../components/BackButton';
 import { PlaceholderArt } from '../components/Placeholder';
 import { Pot } from '../components/Pot';
 import { GIFTS, PRIO_LABEL, stars } from '../data/fixtures';
-import { useReservation, useStore, useViewerRole } from '../state/store';
+import { useStore, useViewerRole } from '../state/store';
+import { useReservations } from '../api/useReservations';
+import {
+  contributeToPot,
+  invalidatePot,
+  invalidateReservations,
+  releaseItem,
+  reserveItem,
+} from '../api/reservations';
 import { Button, Card, Tag, cn } from '../ui';
+
+/** The seeded fixture list. Replaced by the wishlist query in P6d. */
+const LIST_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 
 export function GiftDetail() {
   const { handle = 'sophie', slug = 'anniversaire', itemId } = useParams();
   const { pathname } = useLocation();
-  const { state, dispatch, flash } = useStore();
+  const { state, flash } = useStore();
+  const queryClient = useQueryClient();
   const role = useViewerRole(handle);
   const owner = role === 'owner';
 
@@ -21,7 +34,8 @@ export function GiftDetail() {
   const selected = GIFTS.find((g) => g.id === itemId) ?? GIFTS[0];
   const gift = isPotRoute && !selected.pot ? fallback : selected;
 
-  const reservation = useReservation(gift.id, role);
+  const reservations = useReservations(LIST_ID);
+  const reservation = reservations.get(gift.id);
 
   const label = owner
     ? 'Modifier ce cadeau'
@@ -35,21 +49,24 @@ export function GiftDetail() {
 
   const taken = !!reservation && reservation !== 'you' && !gift.pot;
 
-  function act() {
+  async function act() {
     if (owner)
       return flash('Édition — le propriétaire ne voit aucune réservation');
     if (gift.pot) {
-      dispatch({ type: 'contribute', amount: state.contrib });
+      await contributeToPot(gift.id, state.contrib * 100);
+      await invalidatePot(queryClient, gift.id);
       return flash(
         `+${state.contrib} € — merci, votre participation est anonyme`,
       );
     }
-    if (reservation === 'you') {
-      dispatch({ type: 'unreserve', id: gift.id });
+    if (reservation) {
+      if (reservation !== 'you') return flash("Un autre proche l'a déjà réservé");
+      await releaseItem(gift.id);
+      await invalidateReservations(queryClient, LIST_ID);
       return flash('Réservation annulée');
     }
-    if (reservation) return flash("Un autre proche l'a déjà réservé");
-    dispatch({ type: 'reserve', id: gift.id });
+    await reserveItem(gift.id);
+    await invalidateReservations(queryClient, LIST_ID);
     flash('Réservé — Sophie ne verra rien');
   }
 
@@ -121,12 +138,12 @@ export function GiftDetail() {
           </a>
 
           {/*
-            No `!owner &&` guard: Pot renders nothing when usePotState hands it
-            null, which it always does for an owner. The condition that used to
-            live here — `!!gift.pot && !owner` — was a guard someone could
-            forget or invert.
+            No `!owner &&` guard: Pot renders nothing when the server declines
+            to describe the pot, which it always does for an owner. The
+            condition that used to live here — `!!gift.pot && !owner` — was a
+            guard someone could forget or invert.
           */}
-          <Pot role={role} />
+          <Pot itemId={gift.id} />
 
           <Card tone="surface" radius="lg" className="mt-4.5 px-3.5 py-3.5">
             <p className="text-pretty text-xs leading-relaxed font-medium text-fg2">

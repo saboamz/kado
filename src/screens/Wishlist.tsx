@@ -2,16 +2,21 @@ import { useParams } from 'react-router-dom';
 import { GiftCard } from '../components/GiftCard';
 import { PlaceholderArt } from '../components/Placeholder';
 import { GIFTS } from '../data/fixtures';
-import { useReservedCount, useStore, useViewerRole } from '../state/store';
+import { useStore, useViewerRole } from '../state/store';
+import { useReservations } from '../api/useReservations';
 import { BackButton } from '../components/BackButton';
 import { Eyebrow, ScreenShell, cn } from '../ui';
+
+/** The seeded fixture list. Replaced by the wishlist query in P6d. */
+const LIST_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 
 export function Wishlist() {
   const { handle = 'sophie', slug = 'anniversaire' } = useParams();
   const { state, dispatch } = useStore();
   const role = useViewerRole(handle);
   const owner = role === 'owner';
-  const reservedCount = useReservedCount(role);
+  // Real ids arrive with the wishlist query in P6d; the fixture list has one.
+  const reservations = useReservations(LIST_ID);
   const grid = state.layout === 'grid';
 
   return (
@@ -34,11 +39,14 @@ export function Wishlist() {
           {/*
             The owner is told how many wishes exist, never how many are taken.
             A "2 réservées" counter would leak the very thing this app hides.
-            useReservedCount returns null for an owner, so there is no number
-            here to accidentally render.
+
+            There is no `owner ?` here and there does not need to be: the count
+            comes from an RPC that refuses an owner outright, so their map is
+            empty and the number is 0. The absence of a guard is the point —
+            a guard is something a future edit can invert.
           */}
           {GIFTS.length} envies
-          {reservedCount !== null && ` · ${reservedCount} réservées`}
+          {reservations.count > 0 && ` · ${reservations.count} réservées`}
         </span>
         <div className="flex-1" />
         <button
@@ -63,7 +71,7 @@ export function Wishlist() {
             key={g.id}
             gift={g}
             grid={grid}
-            role={role}
+            reservation={reservations.get(g.id)}
             to={`/u/${handle}/listes/${slug}/${g.id}${g.pot ? '/cagnotte' : ''}`}
           />
         ))}
