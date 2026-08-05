@@ -60,13 +60,15 @@ select is_empty(
   'no reco table is replicated (Realtime would stream reserve events)'
 );
 
-select is(
-  (select count(*)::int from pg_class c
-   join pg_namespace n on n.oid = c.relnamespace
-   where n.nspname = 'reco' and c.relkind = 'r'
-     and c.relrowsecurity and c.relforcerowsecurity),
-  2,
-  'both reco tables have RLS enabled and forced'
+-- Phrased as "none unforced" rather than a count: a hardcoded number goes
+-- stale the moment the schema grows a table, and it fails in a way that looks
+-- like a security regression when it is only arithmetic.
+select is_empty(
+  $$ select 1 from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'reco' and c.relkind = 'r'
+       and not (c.relrowsecurity and c.relforcerowsecurity) $$,
+  'every reco table has RLS enabled and forced'
 );
 
 -- Every kind the app can emit needs a weight, or events silently default to 1
