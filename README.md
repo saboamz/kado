@@ -58,7 +58,7 @@ in pairs.
 
 | Suite | Proves |
 | --- | --- |
-| `npm test` | The UI never renders a reservation to the owner (135 tests) |
+| `npm test` | The UI never renders a reservation to the owner (157 tests) |
 | `supabase/tests/0002_secrecy.test.sql` | The server never sends one (36 assertions) |
 | `supabase/tests/0001_schema.test.sql` | Schema invariants hold (75 assertions) |
 
@@ -124,13 +124,23 @@ and the pair would otherwise drift in silence.
 
 ## Status
 
-Shipped: design tokens and primitives, the router, the public schema, and the
-secrecy layer.
+Shipped: design tokens and primitives, the router, the public schema, the
+secrecy layer, authentication, and the data layer — every screen reads the API.
 
-Next: authentication and real data (replacing `src/data/`), product ingestion
-with URL deduplication, then recommendations — popularity and content-based
-first, collaborative filtering only once there is enough signal to beat them.
-Deduplication quality caps CF quality, so it is measured before CF is built.
+What still imports from `src/data/` is static UI copy and formatters (`stars()`,
+`PRIO_LABEL`, the onboarding slides, the settings labels), plus `FEED`, which
+needs a table of its own. A priority label is not something to fetch.
+
+Without a configured project the app runs against `src/lib/mockTransport.ts`,
+which answers `.rpc()`, `.from()` and `functions.invoke()` — and carries the
+same refusals the SQL does, so an owner is turned away there too. Pass `?as=marc`
+to look at Sophie's list as a friend. Production builds throw at import when the
+env vars are missing, so the mock cannot ship.
+
+Next: product ingestion with URL deduplication, then recommendations —
+popularity and content-based first, collaborative filtering only once there is
+enough signal to beat them. Deduplication quality caps CF quality, so it is
+measured before CF is built.
 
 ## Contributing
 
