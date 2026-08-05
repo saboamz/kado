@@ -356,6 +356,21 @@ export type Database = {
         Args: { p_item: string; p_amount_cents: number };
         Returns: void;
       };
+      /**
+       * Records a BROWSING event. The server refuses reserve / purchase /
+       * contribute here — those are written by the RPCs that perform them.
+       */
+      log_event: {
+        Args: {
+          p_kind: string;
+          p_product?: string | null;
+          p_wish_item?: string | null;
+          p_recipient?: string | null;
+          p_session?: string | null;
+          p_source?: string | null;
+        };
+        Returns: void;
+      };
       can_view_wishlist: {
         Args: { list: string; viewer: string };
         Returns: boolean;

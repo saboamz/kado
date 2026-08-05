@@ -106,6 +106,14 @@ jobs:
       - name: Fail on any secrecy failure
         run: '! grep -q "^not ok" /tmp/secrecy.tap'
 
+      # The whitelist in log_event is the security-relevant part: without it a
+      # client can POST purchases in a loop and promote any product into every
+      # recommendation slate, while the model looks perfectly healthy doing it.
+      - name: Event log tests
+        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0003_events.test.sql | tee /tmp/events.tap
+      - name: Fail on any event failure
+        run: '! grep -q "^not ok" /tmp/events.tap'
+
       # Deduplication quality caps recommendation quality: a product that
       # fragments across rows splits its co-occurrence signal, and no pair
       # reaches the support threshold. Measured here, before any recommender
@@ -121,6 +129,7 @@ jobs:
         run: |
           test "$(grep -c '^ok ' /tmp/schema.tap)"  -ge 75
           test "$(grep -c '^ok ' /tmp/secrecy.tap)" -ge 36
+          test "$(grep -c '^ok ' /tmp/events.tap)"  -ge 20
           test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
 
   # The single worst mistake available in a Supabase app is shipping the

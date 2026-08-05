@@ -32,6 +32,8 @@ const OWNER_HANDLE = 'sophie';
 
 type MockState = {
   reserved: Record<string, 'you' | 'other'>;
+  /** Browsing events logged this run, so a test can assert what was emitted. */
+  events: string[];
   potRaisedCents: number;
   contribCents: number;
   /** Who is signed in. Set by the session provider on sign-in. */
@@ -40,6 +42,7 @@ type MockState = {
 
 const SEED: Omit<MockState, 'viewerHandle'> = {
   reserved: { g2: 'other' },
+  events: [],
   potRaisedCents: 65000,
   contribCents: 5000,
 };
@@ -48,6 +51,11 @@ const state: MockState = { ...structuredClone(SEED), viewerHandle: null };
 
 export function setMockViewer(handle: string | null) {
   state.viewerHandle = handle;
+}
+
+/** What has been logged this run. Tests only. */
+export function mockEvents(): string[] {
+  return state.events;
 }
 
 /**
@@ -109,6 +117,29 @@ export const mockRpc = {
     if (!viewerOwnsTheList() && state.reserved[p_item] === 'you') {
       delete state.reserved[p_item];
     }
+  },
+
+  /**
+   * Carries the same whitelist as the SQL: a client may log browsing only.
+   * Without it the fixture path would accept a forged purchase that the real
+   * backend rejects, and a test could pass against behaviour production
+   * refuses.
+   */
+  log_event({ p_kind }: { p_kind: string }) {
+    const allowed = [
+      'view_product',
+      'view_wish',
+      'like_wish',
+      'click_out',
+      'dismiss_reco',
+    ];
+    if (!allowed.includes(p_kind)) {
+      throw Object.assign(
+        new Error(`event kind ${p_kind} is not client-loggable`),
+        { code: '42501' },
+      );
+    }
+    state.events.push(p_kind);
   },
 
   contribute({
