@@ -58,11 +58,23 @@ does not stop the server sending it. That is why the tests come in pairs.
 
 ## Tests
 
-| Suite | Proves |
-| --- | --- |
-| `npm test` | The UI never renders a reservation to the owner (157 tests) |
-| `supabase/tests/0002_secrecy.test.sql` | The server never sends one (36 assertions) |
-| `supabase/tests/0001_schema.test.sql` | Schema invariants hold (75 assertions) |
+| Suite | Proves | |
+| --- | --- | --- |
+| `npm test` | The UI never renders a reservation to the owner | 191 |
+| `0001_schema` | Schema invariants hold | 75 |
+| `0002_secrecy` | The server never sends a reservation to its owner | 36 |
+| `0003_events` | A client cannot forge a purchase into the model | 20 |
+| `0004_reco` | The slate does not encode reservation state | 21 |
+| `0005_payments` | An unpaid intent cannot inflate a pot | 21 |
+| `0006_notifications` | Nobody is told about their own present | 16 |
+| `0007_cf` | Shrinkage and the support floor hold | 18 |
+| `0008_evaluation` | A tier that has not earned its place can be found | 15 |
+| `dedup-corpus` | The catalogue collapses duplicates, and only duplicates | 16 |
+
+Every one of these has been verified to FAIL when the thing it guards is
+broken. That check matters more than the count: an assertion of absence proves
+nothing until you have confirmed the thing could have been present, and three
+times in this project a test passed while the hole it guarded was wide open.
 
 The database job is a **required check**. Schema exposure is a dashboard
 toggle, outside version control — exactly the kind of thing flipped during an
@@ -140,10 +152,19 @@ same refusals the SQL does, so an owner is turned away there too. Pass `?as=marc
 to look at Sophie's list as a friend. Production builds throw at import when the
 env vars are missing, so the mock cannot ship.
 
-Next: product ingestion with URL deduplication, then recommendations —
-popularity and content-based first, collaborative filtering only once there is
-enough signal to beat them. Deduplication quality caps CF quality, so it is
-measured before CF is built.
+Recommendations run as a cascade — `cf_item`, `content_vector`,
+`content_facet`, `popularity` — and every row records which tier produced it,
+so per-tier conversion is measurable and "why is this here" is answerable.
+
+CF is gated on ~5 000 giving events and is not the point of the feature. If it
+does not beat category popularity on held-out recall, the honest response is to
+delete it from the cascade rather than retune until the numbers agree;
+`reco.evaluation_verdict()` exists to make that call possible, and
+`reco.tier_mix()` to notice that a stalled `cf_item` share means deduplication
+is broken before the model is.
+
+Next: wiring the recommendation slate into the UI, and a Stripe test-mode
+end-to-end run.
 
 ## Contributing
 

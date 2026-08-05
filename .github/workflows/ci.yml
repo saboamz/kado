@@ -143,6 +143,14 @@ jobs:
       - name: Fail on any CF failure
         run: '! grep -q "^not ok" /tmp/cf.tap'
 
+      # The harness exists to make DELETING a tier possible. Every recommender
+      # ships with an argument for why it should exist; the measurement that
+      # would show it should not is the rare part.
+      - name: Evaluation harness tests
+        run: psql -Xv ON_ERROR_STOP=1 -f supabase/tests/0008_evaluation.test.sql | tee /tmp/eval.tap
+      - name: Fail on any evaluation failure
+        run: '! grep -q "^not ok" /tmp/eval.tap'
+
       # Deduplication quality caps recommendation quality: a product that
       # fragments across rows splits its co-occurrence signal, and no pair
       # reaches the support threshold. Measured here, before any recommender
@@ -163,6 +171,7 @@ jobs:
           test "$(grep -c '^ok ' /tmp/pay.tap)"     -ge 21
           test "$(grep -c '^ok ' /tmp/notif.tap)"   -ge 16
           test "$(grep -c '^ok ' /tmp/cf.tap)"      -ge 18
+          test "$(grep -c '^ok ' /tmp/eval.tap)"    -ge 15
           test "$(grep -c '^ok ' /tmp/dedup.tap)"   -ge 16
 
   # The single worst mistake available in a Supabase app is shipping the
