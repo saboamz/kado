@@ -101,10 +101,17 @@ insert into public.wish_items (id, wishlist_id, owner_id, title, price_cents) va
   ('7777bbbb-0000-0000-0000-000000000002','7777aaaa-0000-0000-0000-000000000002',
    '11111111-1111-1111-1111-111111111111','Cadeau secret', 5000);
 
-select is(
-  (select count(*)::int from public.notifications
-   where kind = 'wish_added'),
-  1,
+-- Scoped to THIS list, not to a global count.
+--
+-- The global version passed locally and failed in CI, which seeds the database
+-- first: the seed creates its own wishes, so "exactly one wish_added exists"
+-- was never a statement about the private list at all. Asserting the absence
+-- of a notification ABOUT the private list says what was actually meant, and
+-- says it whatever else is in the database.
+select is_empty(
+  $$ select 1 from public.notifications
+     where kind = 'wish_added'
+       and subject_id = '7777aaaa-0000-0000-0000-000000000002' $$,
   'adding to a PRIVATE list notifies nobody'
 );
 
